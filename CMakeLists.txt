@@ -84,6 +84,7 @@ target_link_libraries(AnyPerfomans PRIVATE
     dwmapi
     psapi
     ntdll
+    advapi32
 )
 
 set_target_properties(AnyPerfomans PROPERTIES

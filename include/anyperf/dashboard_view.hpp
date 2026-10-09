@@ -11,6 +11,8 @@
 
 namespace anyperf {
 
+class EtwTracker;
+
 class DashboardView {
 public:
     DashboardView();
@@ -19,6 +21,7 @@ public:
     void render(
         ProcessMonitor& proc_mon,
         ThreadProfiler& thread_prof,
+        EtwTracker& etw_tracker,
         const FrameStats& frame_stats,
         OverlayMode& current_mode
     );
@@ -30,10 +33,11 @@ public:
     );
 
 private:
-    void render_top_bar(ProcessMonitor& proc_mon, OverlayMode& current_mode);
+    void render_top_bar(ProcessMonitor& proc_mon, EtwTracker& etw_tracker, OverlayMode& current_mode);
     void render_process_tags_bar(ProcessMonitor& proc_mon);
     void render_summary_cards(
         const ProcessMonitor& proc_mon,
+        const EtwTracker& etw_tracker,
         const FrameStats& frame_stats
     );
     void render_telemetry_plots(const ProcessMonitor& proc_mon);
@@ -47,6 +51,7 @@ private:
     );
     void render_mini_hud(
         const ProcessMonitor& proc_mon,
+        const EtwTracker& etw_tracker,
         const FrameStats& frames,
         OverlayMode& current_mode
     );

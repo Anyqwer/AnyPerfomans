@@ -1,4 +1,5 @@
 #include "anyperf/dashboard_view.hpp"
+#include "anyperf/etw_tracker.hpp"
 #include <imgui.h>
 #include <implot.h>
 #include <sstream>
@@ -52,11 +53,12 @@ void DashboardView::push_metrics_sample(
 void DashboardView::render(
     ProcessMonitor& proc_mon,
     ThreadProfiler& thread_prof,
+    EtwTracker& etw_tracker,
     const FrameStats& frame_stats,
     OverlayMode& current_mode
 ) {
     if (current_mode == OverlayMode::MiniHud) {
-        render_mini_hud(proc_mon, frame_stats, current_mode);
+        render_mini_hud(proc_mon, etw_tracker, frame_stats, current_mode);
         return;
     }
 
@@ -69,13 +71,13 @@ void DashboardView::render(
         ImGuiWindowFlags_NoCollapse
     );
 
-    render_top_bar(proc_mon, current_mode);
+    render_top_bar(proc_mon, etw_tracker, current_mode);
     render_process_tags_bar(proc_mon);
 
     ImGui::Separator();
     ImGui::Spacing();
 
-    render_summary_cards(proc_mon, frame_stats);
+    render_summary_cards(proc_mon, etw_tracker, frame_stats);
 
     ImGui::Spacing();
 
@@ -101,12 +103,26 @@ void DashboardView::render(
     ImGui::End();
 }
 
-void DashboardView::render_top_bar(ProcessMonitor& proc_mon, OverlayMode& current_mode) {
+void DashboardView::render_top_bar(ProcessMonitor& proc_mon, EtwTracker& etw_tracker, OverlayMode& current_mode) {
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.26f, 0.78f, 0.95f, 1.0f));
     ImGui::Text("ANYPERFOMANS");
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    ImGui::TextDisabled("v0.1.0 | High-Precision Multi-Process Telemetry & Overhead Profiler");
+    ImGui::TextDisabled("v0.1.0 | Multi-Process Overhead Profiler");
+
+    // ETW Status Indicator
+    ImGui::SameLine();
+    if (etw_tracker.is_active()) {
+        ImGui::TextColored(ImVec4(0.20f, 0.85f, 0.55f, 1.0f), "[Kernel ETW: Active]");
+    } else if (etw_tracker.get_state() == EtwState::AccessDenied) {
+        ImGui::TextColored(ImVec4(1.00f, 0.55f, 0.20f, 1.0f), "[ETW: Non-Elevated]");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Restart as Admin")) {
+            EtwTracker::relaunch_as_admin();
+        }
+    } else {
+        ImGui::TextDisabled("[ETW: Standby]");
+    }
 
     ImGui::SameLine(ImGui::GetWindowWidth() - 280.0f);
     if (ImGui::Button("Switch to Mini HUD [F11]", ImVec2(260, 26))) {
@@ -213,6 +229,7 @@ void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon) {
 
 void DashboardView::render_summary_cards(
     const ProcessMonitor& proc_mon,
+    const EtwTracker& etw_tracker,
     const FrameStats& frame_stats
 ) {
     float avail_width = ImGui::GetContentRegionAvail().x;
@@ -225,7 +242,11 @@ void DashboardView::render_summary_cards(
 
     // Card 1: Frame Rates & Latency
     ImGui::BeginChild("CardFPS", ImVec2(card_width, card_height), true);
-    ImGui::TextDisabled("FRAME TIMING");
+    if (etw_tracker.is_active()) {
+        ImGui::TextColored(ImVec4(0.20f, 0.85f, 0.55f, 1.0f), "KERNEL PRESENTMON (ETW)");
+    } else {
+        ImGui::TextDisabled("FRAME TIMING (LOCAL)");
+    }
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.26f, 0.90f, 0.50f, 1.0f));
     ImGui::SetWindowFontScale(1.3f);
     ImGui::Text("%.1f FPS", frame_stats.current_fps);
@@ -528,6 +549,7 @@ void DashboardView::render_benchmark_tab(
 
 void DashboardView::render_mini_hud(
     const ProcessMonitor& proc_mon,
+    const EtwTracker& etw_tracker,
     const FrameStats& frames,
     OverlayMode& current_mode
 ) {
@@ -559,7 +581,11 @@ void DashboardView::render_mini_hud(
     ImGui::Separator();
 
     // FPS
-    ImGui::Text("FPS: %.1f  (1%% Low: %.1f)", frames.current_fps, frames.one_percent_low);
+    if (etw_tracker.is_active()) {
+        ImGui::Text("FPS: %.1f (1%% Low: %.1f) [ETW]", frames.current_fps, frames.one_percent_low);
+    } else {
+        ImGui::Text("FPS: %.1f  (1%% Low: %.1f)", frames.current_fps, frames.one_percent_low);
+    }
     ImGui::Text("Frametime: %.2f ms", frames.frametime_ms);
 
     ImGui::Separator();
