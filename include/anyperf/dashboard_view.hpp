@@ -15,6 +15,7 @@ namespace anyperf {
 
 class EtwTracker;
 class Dx11Backend;
+struct AppFonts;
 
 class DashboardView {
 public:
@@ -40,26 +41,41 @@ public:
     );
 
 private:
-    void render_top_bar(ProcessMonitor& proc_mon, EtwTracker& etw_tracker, OverlayMode& current_mode);
-    void render_process_tags_bar(ProcessMonitor& proc_mon);
+    void render_header_bar(
+        ProcessMonitor& proc_mon,
+        EtwTracker& etw_tracker,
+        GpuMonitor& gpu_mon,
+        const AppFonts& fonts,
+        OverlayMode& current_mode
+    );
+    void render_navigation_bar(const AppFonts& fonts);
+    void render_process_tags_bar(ProcessMonitor& proc_mon, const AppFonts& fonts);
     void render_summary_cards(
         const ProcessMonitor& proc_mon,
         const EtwTracker& etw_tracker,
         const GpuMetrics& gpu,
-        const FrameStats& frame_stats
+        const FrameStats& frame_stats,
+        const AppFonts& fonts
     );
-    void render_telemetry_plots(const ProcessMonitor& proc_mon, const GpuMetrics& gpu);
+    void render_telemetry_plots(
+        const ProcessMonitor& proc_mon,
+        const GpuMetrics& gpu,
+        const AppFonts& fonts
+    );
     void render_thread_inspector(
         ThreadProfiler& thread_prof,
-        const ProcessMonitor& proc_mon
+        const ProcessMonitor& proc_mon,
+        const AppFonts& fonts
     );
     void render_benchmark_tab(
         const ProcessMonitor& proc_mon,
         const GpuMetrics& gpu,
-        const FrameStats& frames
+        const FrameStats& frames,
+        const AppFonts& fonts
     );
     void render_settings_tab(
-        ConfigManager& config_mgr
+        ConfigManager& config_mgr,
+        const AppFonts& fonts
     );
     void render_rtss_mini_hud(
         const ProcessMonitor& proc_mon,
@@ -82,6 +98,8 @@ private:
     std::vector<ProcessInfo> cached_proc_list_;
     char process_search_query_[128] = "";
     DWORD selected_inspector_pid_ = 0;
+
+    int active_tab_index_ = 0; // 0 = Charts, 1 = Threads, 2 = Benchmark, 3 = Settings
 
     // A/B Benchmark state
     bool is_benchmarking_ = false;

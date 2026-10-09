@@ -47,22 +47,89 @@ Dx11Backend::~Dx11Backend() {
     g_backend_instance = nullptr;
 }
 
+void Dx11Backend::load_high_dpi_fonts() {
+    ImGuiIO& io = ImGui::GetIO();
+
+    // 1. Calculate Monitor DPI scale factor
+    float dpi = 1.0f;
+    HDC hdc = GetDC(hwnd_);
+    if (hdc) {
+        dpi = static_cast<float>(GetDeviceCaps(hdc, LOGPIXELSX)) / 96.0f;
+        ReleaseDC(hwnd_, hdc);
+    }
+    if (dpi < 1.0f) dpi = 1.0f;
+    fonts_.dpi_scale = dpi;
+
+    // 2. High-quality font oversampling configuration
+    ImFontConfig cfg;
+    cfg.OversampleH = 3;
+    cfg.OversampleV = 2;
+    cfg.PixelSnapH = true;
+
+    // 3. Complete Latin + Cyrillic glyph ranges
+    static const ImWchar ranges[] = {
+        0x0020, 0x00FF, // Basic Latin + Latin Supplement
+        0x0400, 0x052F, // Cyrillic + Cyrillic Supplement
+        0x2DE0, 0x2DFF, // Cyrillic Extended-A
+        0xA640, 0xA69F, // Cyrillic Extended-B
+        0,
+    };
+
+    const char* segoe_regular = "C:\\Windows\\Fonts\\segoeui.ttf";
+    const char* segoe_bold    = "C:\\Windows\\Fonts\\segoeuib.ttf";
+    const char* cascadia_mono = "C:\\Windows\\Fonts\\CascadiaMono.ttf";
+    const char* consolas_mono = "C:\\Windows\\Fonts\\consola.ttf";
+
+    const char* mono_path = (GetFileAttributesA(cascadia_mono) != INVALID_FILE_ATTRIBUTES) ? cascadia_mono : consolas_mono;
+
+    // Load Segoe UI Regular as primary UI font (16px base scaled by DPI)
+    if (GetFileAttributesA(segoe_regular) != INVALID_FILE_ATTRIBUTES) {
+        fonts_.regular = io.Fonts->AddFontFromFileTTF(segoe_regular, 16.0f * dpi, &cfg, ranges);
+        io.FontDefault = fonts_.regular;
+    }
+
+    // Load Segoe UI Bold variants
+    if (GetFileAttributesA(segoe_bold) != INVALID_FILE_ATTRIBUTES) {
+        fonts_.bold = io.Fonts->AddFontFromFileTTF(segoe_bold, 18.0f * dpi, &cfg, ranges);
+        fonts_.title = io.Fonts->AddFontFromFileTTF(segoe_bold, 22.0f * dpi, &cfg, ranges);
+        fonts_.large_stat = io.Fonts->AddFontFromFileTTF(segoe_bold, 30.0f * dpi, &cfg, ranges);
+    }
+
+    // Load Cascadia / Consolas Monospace for RTSS HUD & Code/Telemetry
+    if (GetFileAttributesA(mono_path) != INVALID_FILE_ATTRIBUTES) {
+        fonts_.mono = io.Fonts->AddFontFromFileTTF(mono_path, 15.0f * dpi, &cfg, ranges);
+        fonts_.mono_bold = io.Fonts->AddFontFromFileTTF(mono_path, 17.0f * dpi, &cfg, ranges);
+    }
+
+    // Fallbacks
+    if (!fonts_.regular) fonts_.regular = io.Fonts->AddFontDefault();
+    if (!fonts_.bold) fonts_.bold = fonts_.regular;
+    if (!fonts_.title) fonts_.title = fonts_.regular;
+    if (!fonts_.large_stat) fonts_.large_stat = fonts_.regular;
+    if (!fonts_.mono) fonts_.mono = fonts_.regular;
+    if (!fonts_.mono_bold) fonts_.mono_bold = fonts_.bold;
+}
+
 void Dx11Backend::setup_modern_imgui_style() {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
+    float s = fonts_.dpi_scale;
 
-    style.WindowRounding = 10.0f;
-    style.ChildRounding = 8.0f;
-    style.FrameRounding = 6.0f;
-    style.PopupRounding = 8.0f;
-    style.ScrollbarRounding = 9.0f;
-    style.GrabRounding = 6.0f;
-    style.TabRounding = 6.0f;
+    style.WindowRounding    = 10.0f * s;
+    style.ChildRounding     = 8.0f * s;
+    style.FrameRounding     = 6.0f * s;
+    style.PopupRounding     = 8.0f * s;
+    style.ScrollbarRounding = 9.0f * s;
+    style.GrabRounding      = 6.0f * s;
+    style.TabRounding       = 6.0f * s;
 
-    style.WindowPadding = ImVec2(14.0f, 14.0f);
-    style.FramePadding = ImVec2(8.0f, 6.0f);
-    style.ItemSpacing = ImVec2(10.0f, 8.0f);
-    style.ItemInnerSpacing = ImVec2(6.0f, 6.0f);
+    style.WindowPadding     = ImVec2(16.0f * s, 16.0f * s);
+    style.FramePadding      = ImVec2(10.0f * s, 7.0f * s);
+    style.ItemSpacing       = ImVec2(10.0f * s, 9.0f * s);
+    style.ItemInnerSpacing  = ImVec2(7.0f * s, 6.0f * s);
+    style.IndentSpacing     = 20.0f * s;
+    style.ScrollbarSize     = 14.0f * s;
+    style.GrabMinSize       = 12.0f * s;
 
     // ASUS ROG Red & Black + Liquid Glass Palette
     colors[ImGuiCol_Text]                  = ImVec4(0.96f, 0.96f, 0.98f, 1.00f);
@@ -149,6 +216,7 @@ bool Dx11Backend::init(int width, int height, const std::wstring& title) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
+    load_high_dpi_fonts();
     setup_modern_imgui_style();
 
     ImGui_ImplWin32_Init(hwnd_);

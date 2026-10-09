@@ -35,6 +35,8 @@ Unlike conventional monitors that merely report aggregate system-wide CPU utiliz
 
 ### 5. ASUS ROG Red & Black Liquid Glass Aesthetic
 - Deep Obsidian abyss backgrounds, tinted liquid glass child containers, and radiant crimson edge glow accents.
+- **High-DPI Dynamic Scaling**: Automatic per-monitor DPI detection (`LOGPIXELSX`) scaling all UI padding, frames, and widgets smoothly across 1080p, 1440p, and 4K monitors.
+- **TrueType Typography & Cyrillic Support**: High-definition subpixel rasterization with **Segoe UI** and **Cascadia Mono** / **Consolas**, featuring full Unicode Latin and Cyrillic character sets.
 
 ### 6. Deep Thread Inspector
 - Enumerate and inspect every active thread inside any selected process.

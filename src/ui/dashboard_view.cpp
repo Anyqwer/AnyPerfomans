@@ -68,6 +68,8 @@ void DashboardView::render(
     const FrameStats& frame_stats,
     OverlayMode& current_mode
 ) {
+    const auto& fonts = backend.get_fonts();
+
     if (current_mode == OverlayMode::MiniHud) {
         render_rtss_mini_hud(proc_mon, etw_tracker, gpu_mon.get_metrics(), config_mgr, backend, frame_stats, current_mode);
         return;
@@ -82,79 +84,155 @@ void DashboardView::render(
         ImGuiWindowFlags_NoCollapse
     );
 
-    render_top_bar(proc_mon, etw_tracker, current_mode);
-    render_process_tags_bar(proc_mon);
+    // 1. Header with branding & status badges
+    render_header_bar(proc_mon, etw_tracker, gpu_mon, fonts, current_mode);
 
-    ImGui::Separator();
+    // 2. High-Tech Segmented Navigation Bar
+    render_navigation_bar(fonts);
+
+    // 3. Process Chip Management Bar
+    render_process_tags_bar(proc_mon, fonts);
+
     ImGui::Spacing();
 
-    render_summary_cards(proc_mon, etw_tracker, gpu_mon.get_metrics(), frame_stats);
+    // 4. Liquid Glass KPI Cards
+    render_summary_cards(proc_mon, etw_tracker, gpu_mon.get_metrics(), frame_stats, fonts);
 
     ImGui::Spacing();
 
-    if (ImGui::BeginTabBar("MainTabs")) {
-        if (ImGui::BeginTabItem("Telemetry & Multi-Process Charts")) {
-            render_telemetry_plots(proc_mon, gpu_mon.get_metrics());
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("Thread Inspector")) {
-            render_thread_inspector(thread_prof, proc_mon);
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("Comparative Impact Benchmark")) {
-            render_benchmark_tab(proc_mon, gpu_mon.get_metrics(), frame_stats);
-            ImGui::EndTabItem();
-        }
-
-        if (ImGui::BeginTabItem("HUD & Hotkey Settings")) {
-            render_settings_tab(config_mgr);
-            ImGui::EndTabItem();
-        }
-
-        ImGui::EndTabBar();
+    // 5. Active Tab View
+    switch (active_tab_index_) {
+        case 0:
+            render_telemetry_plots(proc_mon, gpu_mon.get_metrics(), fonts);
+            break;
+        case 1:
+            render_thread_inspector(thread_prof, proc_mon, fonts);
+            break;
+        case 2:
+            render_benchmark_tab(proc_mon, gpu_mon.get_metrics(), frame_stats, fonts);
+            break;
+        case 3:
+            render_settings_tab(config_mgr, fonts);
+            break;
     }
 
     ImGui::End();
 }
 
-void DashboardView::render_top_bar(ProcessMonitor& proc_mon, EtwTracker& etw_tracker, OverlayMode& current_mode) {
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.22f, 0.32f, 1.0f));
+void DashboardView::render_header_bar(
+    ProcessMonitor& /*proc_mon*/,
+    EtwTracker& etw_tracker,
+    GpuMonitor& gpu_mon,
+    const AppFonts& fonts,
+    OverlayMode& current_mode
+) {
+    // App Logo & Title in Bold Title Font
+    ImGui::PushFont(fonts.title);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.20f, 0.30f, 1.0f));
     ImGui::Text("⚡ ANYPERFOMANS");
     ImGui::PopStyleColor();
-    ImGui::SameLine();
-    ImGui::TextDisabled("v0.2.0 | ROG Liquid Glass Edition");
+    ImGui::PopFont();
 
-    // ETW Status Indicator
     ImGui::SameLine();
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextDisabled("ROG LIQUID GLASS");
+    ImGui::PopFont();
+    ImGui::SameLine();
+    ImGui::TextDisabled("| Precision Multi-Process Profiler");
+
+    // Right-aligned status indicators
+    float right_pos = ImGui::GetWindowWidth() - 480.0f * fonts.dpi_scale;
+    ImGui::SameLine(right_pos > 300.0f ? right_pos : 300.0f);
+
+    // ETW Status Badge
     if (etw_tracker.is_active()) {
-        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.45f, 1.0f), "[Kernel ETW: Active]");
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.35f, 0.18f, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.20f, 1.00f, 0.50f, 1.0f));
+        ImGui::Button("● KERNEL ETW ACTIVE");
+        ImGui::PopStyleColor(2);
     } else if (etw_tracker.get_state() == EtwState::AccessDenied) {
-        ImGui::TextColored(ImVec4(1.00f, 0.55f, 0.20f, 1.0f), "[ETW: Non-Elevated]");
-        ImGui::SameLine();
-        if (ImGui::SmallButton("Restart as Admin")) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.40f, 0.20f, 0.05f, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.60f, 0.20f, 1.0f));
+        if (ImGui::Button("⚠ RUN AS ADMIN")) {
             EtwTracker::relaunch_as_admin();
         }
+        ImGui::PopStyleColor(2);
     } else {
-        ImGui::TextDisabled("[ETW: Standby]");
+        ImGui::TextDisabled("[ETW STANDBY]");
     }
 
-    ImGui::SameLine(ImGui::GetWindowWidth() - 280.0f);
-    if (ImGui::Button("Switch to Mini HUD [F11]", ImVec2(260, 26))) {
+    ImGui::SameLine();
+
+    // GPU Status Badge
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.08f, 0.12f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.40f, 0.50f, 1.0f));
+    std::string gpu_label = gpu_mon.is_nvml_loaded() ? "● NVIDIA NVML" : "● D3D11 DXGI";
+    ImGui::Button(gpu_label.c_str());
+    ImGui::PopStyleColor(2);
+
+    ImGui::SameLine();
+
+    // Mini HUD Switch
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.80f, 0.16f, 0.25f, 0.90f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(1.00f, 0.25f, 0.35f, 1.0f));
+    if (ImGui::Button("🗔 MINI HUD [F11]", ImVec2(140.0f * fonts.dpi_scale, 28.0f * fonts.dpi_scale))) {
         current_mode = OverlayMode::MiniHud;
     }
+    ImGui::PopStyleColor(2);
 
     ImGui::Spacing();
+}
 
-    // Process Search & Add Control
-    ImGui::Text("Add Process to Monitor:");
+void DashboardView::render_navigation_bar(const AppFonts& fonts) {
+    const char* tabs[] = {
+        "📊  TELEMETRY & CHARTS",
+        "🧵  THREAD INSPECTOR",
+        "🎯  IMPACT BENCHMARK",
+        "⚙️  HUD & SETTINGS"
+    };
+
+    float tab_width = 210.0f * fonts.dpi_scale;
+    float tab_height = 36.0f * fonts.dpi_scale;
+
+    ImGui::PushFont(fonts.bold);
+
+    for (int i = 0; i < 4; ++i) {
+        bool is_active = (active_tab_index_ == i);
+
+        if (is_active) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.15f, 0.24f, 0.95f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.22f, 0.32f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.10f, 0.12f, 0.16f, 0.70f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.20f, 0.15f, 0.20f, 0.85f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.68f, 0.75f, 1.0f));
+        }
+
+        if (ImGui::Button(tabs[i], ImVec2(tab_width, tab_height))) {
+            active_tab_index_ = i;
+        }
+
+        ImGui::PopStyleColor(3);
+
+        if (i < 3) ImGui::SameLine(0, 8.0f * fonts.dpi_scale);
+    }
+
+    ImGui::PopFont();
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+}
+
+void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon, const AppFonts& fonts) {
+    // Filter & Add Search Bar
+    ImGui::TextDisabled("MONITOR PROCESSES:");
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(180);
-    ImGui::InputTextWithHint("##FilterQuery", "Filter (e.g. discord, chrome)", process_search_query_, sizeof(process_search_query_));
+    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    ImGui::InputTextWithHint("##FilterQuery", "🔍 Filter process...", process_search_query_, sizeof(process_search_query_));
 
     ImGui::SameLine();
-    ImGui::SetNextItemWidth(260);
+    ImGui::SetNextItemWidth(260.0f * fonts.dpi_scale);
     if (ImGui::BeginCombo("##ProcessSelectCombo", "Select from active processes...")) {
         std::string query = process_search_query_;
         for (const auto& p : cached_proc_list_) {
@@ -167,7 +245,7 @@ void DashboardView::render_top_bar(ProcessMonitor& proc_mon, EtwTracker& etw_tra
             bool already_monitored = proc_mon.is_monitored(p.pid);
 
             if (already_monitored) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.5f, 0.5f, 0.5f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
             }
 
             if (ImGui::Selectable(label.c_str(), false, already_monitored ? ImGuiSelectableFlags_Disabled : 0)) {
@@ -182,26 +260,27 @@ void DashboardView::render_top_bar(ProcessMonitor& proc_mon, EtwTracker& etw_tra
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Refresh List")) {
+    if (ImGui::Button("⟳ Refresh")) {
         cached_proc_list_ = ProcessMonitor::enumerate_processes();
     }
 
     ImGui::SameLine();
-    if (ImGui::Button("Clear All")) {
+    if (ImGui::Button("✕ Clear All")) {
         proc_mon.clear_targets();
         cpu_histories_.clear();
         ram_histories_mb_.clear();
     }
-}
 
-void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon) {
+    // Active Process Chips
     const auto& targets = proc_mon.get_monitored_targets();
     if (targets.empty()) {
-        ImGui::TextColored(ImVec4(0.9f, 0.6f, 0.2f, 1.0f), "No processes selected. Select 2 or more processes above to start profiling.");
+        ImGui::Spacing();
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "No processes selected. Search above and add processes to start profiling.");
         return;
     }
 
-    ImGui::TextDisabled("Active Targets:");
+    ImGui::Spacing();
+    ImGui::TextDisabled("ACTIVE TARGETS:");
     ImGui::SameLine();
 
     DWORD to_remove_pid = 0;
@@ -211,22 +290,24 @@ void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon) {
         ImGui::PushID(static_cast<int>(t.pid));
 
         ImVec4 col(t.color.r, t.color.g, t.color.b, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(col.x * 0.25f, col.y * 0.25f, col.z * 0.25f, 0.9f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(col.x * 0.40f, col.y * 0.40f, col.z * 0.40f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(col.x * 0.20f, col.y * 0.20f, col.z * 0.20f, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(col.x * 0.35f, col.y * 0.35f, col.z * 0.35f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, col);
 
-        std::string badge = (t.is_primary ? "[PRIMARY] " : "") + wide_to_utf8(t.name) + " (" + std::to_string(t.pid) + ")";
+        std::string badge = (t.is_primary ? "★ [PRIMARY] " : "● ") + wide_to_utf8(t.name) + " (" + std::to_string(t.pid) + ")";
+        ImGui::PushFont(fonts.bold);
         if (ImGui::Button(badge.c_str())) {
             to_primary_pid = t.pid;
         }
+        ImGui::PopFont();
 
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine(0, 2);
-        if (ImGui::SmallButton("X")) {
+        if (ImGui::SmallButton("✕")) {
             to_remove_pid = t.pid;
         }
-        ImGui::SameLine(0, 8);
+        ImGui::SameLine(0, 8.0f * fonts.dpi_scale);
 
         ImGui::PopID();
     }
@@ -247,11 +328,12 @@ void DashboardView::render_summary_cards(
     const ProcessMonitor& proc_mon,
     const EtwTracker& etw_tracker,
     const GpuMetrics& gpu,
-    const FrameStats& frame_stats
+    const FrameStats& frame_stats,
+    const AppFonts& fonts
 ) {
     float avail_width = ImGui::GetContentRegionAvail().x;
-    float card_width = (avail_width - 30.0f) / 4.0f;
-    float card_height = 86.0f;
+    float card_width = (avail_width - 36.0f * fonts.dpi_scale) / 4.0f;
+    float card_height = 96.0f * fonts.dpi_scale;
 
     const auto* primary = proc_mon.get_primary_target();
     double total_sec_cpu = proc_mon.get_total_secondary_cpu();
@@ -260,15 +342,17 @@ void DashboardView::render_summary_cards(
     // Card 1: Frame Rates & Latency
     ImGui::BeginChild("CardFPS", ImVec2(card_width, card_height), true);
     if (etw_tracker.is_active()) {
-        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.45f, 1.0f), "KERNEL PRESENTMON (ETW)");
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.45f, 1.0f), "● KERNEL PRESENTMON");
     } else {
         ImGui::TextDisabled("FRAME TIMING (LOCAL)");
     }
+    ImGui::PushFont(fonts.large_stat);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.90f, 0.45f, 1.0f));
-    ImGui::SetWindowFontScale(1.3f);
-    ImGui::Text("%.1f FPS", frame_stats.current_fps);
-    ImGui::SetWindowFontScale(1.0f);
+    ImGui::Text("%.1f", frame_stats.current_fps);
     ImGui::PopStyleColor();
+    ImGui::PopFont();
+    ImGui::SameLine();
+    ImGui::TextDisabled("FPS");
     ImGui::Text("1%% Low: %.1f | FT: %.2f ms", frame_stats.one_percent_low, frame_stats.frametime_ms);
     ImGui::EndChild();
 
@@ -276,12 +360,14 @@ void DashboardView::render_summary_cards(
 
     // Card 2: GPU Telemetry Card
     ImGui::BeginChild("CardGPU", ImVec2(card_width, card_height), true);
-    ImGui::TextDisabled("GPU TELEMETRY");
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.30f, 0.40f, 1.0f));
-    ImGui::SetWindowFontScale(1.3f);
-    ImGui::Text("%d%% GPU", gpu.core_usage_percent);
-    ImGui::SetWindowFontScale(1.0f);
+    ImGui::TextDisabled("GPU HARDWARE ENGINE");
+    ImGui::PushFont(fonts.large_stat);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.35f, 0.45f, 1.0f));
+    ImGui::Text("%d%%", gpu.core_usage_percent);
     ImGui::PopStyleColor();
+    ImGui::PopFont();
+    ImGui::SameLine();
+    ImGui::TextDisabled("LOAD");
     float vram_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);
     if (gpu.temperature_c > 0) {
         ImGui::Text("%d°C | VRAM: %.0f MB | %d MHz", gpu.temperature_c, vram_mb, gpu.core_clock_mhz);
@@ -292,15 +378,17 @@ void DashboardView::render_summary_cards(
 
     ImGui::SameLine();
 
-    // Card 3: Primary Process
+    // Card 3: Primary Target Process
     ImGui::BeginChild("CardPrimary", ImVec2(card_width, card_height), true);
-    ImGui::TextDisabled("PRIMARY TARGET");
+    ImGui::TextDisabled("PRIMARY APPLICATION");
     if (primary && primary->is_alive) {
+        ImGui::PushFont(fonts.large_stat);
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(primary->color.r, primary->color.g, primary->color.b, 1.0f));
-        ImGui::SetWindowFontScale(1.3f);
-        ImGui::Text("%.1f%% CPU", primary->cpu_percent);
-        ImGui::SetWindowFontScale(1.0f);
+        ImGui::Text("%.1f%%", primary->cpu_percent);
         ImGui::PopStyleColor();
+        ImGui::PopFont();
+        ImGui::SameLine();
+        ImGui::TextDisabled("CPU");
         float ram_mb = static_cast<float>(primary->private_working_set) / (1024.0f * 1024.0f);
         ImGui::Text("%s | %.0f MB Private", wide_to_utf8(primary->name).c_str(), ram_mb);
     } else {
@@ -312,21 +400,23 @@ void DashboardView::render_summary_cards(
 
     // Card 4: Secondary Background Overhead Total
     ImGui::BeginChild("CardSecondary", ImVec2(card_width, card_height), true);
-    ImGui::TextDisabled("SECONDARY APPS OVERHEAD");
+    ImGui::TextDisabled("TOTAL BACKGROUND TAX");
+    ImGui::PushFont(fonts.large_stat);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.22f, 0.32f, 1.0f));
-    ImGui::SetWindowFontScale(1.3f);
-    ImGui::Text("+%.2f%% CPU", total_sec_cpu);
-    ImGui::SetWindowFontScale(1.0f);
+    ImGui::Text("+%.2f%%", total_sec_cpu);
     ImGui::PopStyleColor();
+    ImGui::PopFont();
+    ImGui::SameLine();
+    ImGui::TextDisabled("CPU");
     float sec_ram_mb = static_cast<float>(total_sec_ram) / (1024.0f * 1024.0f);
     double overhead_ratio = (primary && primary->cpu_percent > 0.0) ? (total_sec_cpu / primary->cpu_percent * 100.0) : 0.0;
     ImGui::Text("%.0f MB Total RAM | +%.1f%% Tax", sec_ram_mb, overhead_ratio);
     ImGui::EndChild();
 }
 
-void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon, const GpuMetrics& gpu) {
+void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon, const GpuMetrics& /*gpu*/, const AppFonts& /*fonts*/) {
     float avail_width = ImGui::GetContentRegionAvail().x;
-    float plot_height = 230.0f;
+    float plot_height = 240.0f;
     const auto& targets = proc_mon.get_monitored_targets();
 
     // 1. Frametime Plot
@@ -339,7 +429,7 @@ void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon, const
 
         if (!ft_data.empty()) {
             ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(1.00f, 0.24f, 0.32f, 1.0f));
-            ImPlot::PlotLine("Frametime", ft_data.data(), (int)ft_data.size());
+            ImPlot::PlotLine("Frametime", ft_data.data(), static_cast<int>(ft_data.size()));
             ImPlot::PopStyleColor();
         }
 
@@ -363,7 +453,7 @@ void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon, const
         gpu_usage_history_.get_linear(gpu_data);
         if (!gpu_data.empty()) {
             ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(1.00f, 0.40f, 0.20f, 1.0f));
-            ImPlot::PlotLine("GPU Core Load %", gpu_data.data(), (int)gpu_data.size());
+            ImPlot::PlotLine("GPU Core Load %", gpu_data.data(), static_cast<int>(gpu_data.size()));
             ImPlot::PopStyleColor();
         }
 
@@ -375,7 +465,7 @@ void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon, const
                 if (!cpu_data.empty()) {
                     std::string label = wide_to_utf8(t.name) + " [" + std::to_string(t.pid) + "]";
                     ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(t.color.r, t.color.g, t.color.b, 1.0f));
-                    ImPlot::PlotLine(label.c_str(), cpu_data.data(), (int)cpu_data.size());
+                    ImPlot::PlotLine(label.c_str(), cpu_data.data(), static_cast<int>(cpu_data.size()));
                     ImPlot::PopStyleColor();
                 }
             }
@@ -398,7 +488,7 @@ void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon, const
                 if (!ram_data.empty()) {
                     std::string label = wide_to_utf8(t.name) + " [" + std::to_string(t.pid) + "]";
                     ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(t.color.r, t.color.g, t.color.b, 1.0f));
-                    ImPlot::PlotLine(label.c_str(), ram_data.data(), (int)ram_data.size());
+                    ImPlot::PlotLine(label.c_str(), ram_data.data(), static_cast<int>(ram_data.size()));
                     ImPlot::PopStyleColor();
                 }
             }
@@ -410,7 +500,8 @@ void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon, const
 
 void DashboardView::render_thread_inspector(
     ThreadProfiler& thread_prof,
-    const ProcessMonitor& proc_mon
+    const ProcessMonitor& proc_mon,
+    const AppFonts& fonts
 ) {
     const auto& targets = proc_mon.get_monitored_targets();
     if (targets.empty()) {
@@ -429,7 +520,7 @@ void DashboardView::render_thread_inspector(
     const auto* cur_target = proc_mon.get_target(selected_inspector_pid_);
     std::string cur_name = cur_target ? (wide_to_utf8(cur_target->name) + " (" + std::to_string(cur_target->pid) + ")") : "Select...";
 
-    ImGui::SetNextItemWidth(300);
+    ImGui::SetNextItemWidth(300.0f * fonts.dpi_scale);
     if (ImGui::BeginCombo("##ThreadInspectorSelect", cur_name.c_str())) {
         for (const auto& t : targets) {
             std::string label = wide_to_utf8(t.name) + " [" + std::to_string(t.pid) + "]";
@@ -450,11 +541,11 @@ void DashboardView::render_thread_inspector(
         ImGuiTableFlags_Resizable | ImGuiTableFlags_RowBg |
         ImGuiTableFlags_Borders | ImGuiTableFlags_ScrollY;
 
-    if (ImGui::BeginTable("ThreadTable", 5, flags, ImVec2(0, 380))) {
-        ImGui::TableSetupColumn("Thread ID (TID)", ImGuiTableColumnFlags_WidthFixed, 120.0f);
-        ImGui::TableSetupColumn("Relative Load %", ImGuiTableColumnFlags_WidthFixed, 130.0f);
-        ImGui::TableSetupColumn("Cycle Delta / Sample", ImGuiTableColumnFlags_WidthFixed, 160.0f);
-        ImGui::TableSetupColumn("Start Address", ImGuiTableColumnFlags_WidthFixed, 160.0f);
+    if (ImGui::BeginTable("ThreadTable", 5, flags, ImVec2(0, 420.0f * fonts.dpi_scale))) {
+        ImGui::TableSetupColumn("Thread ID (TID)", ImGuiTableColumnFlags_WidthFixed, 130.0f * fonts.dpi_scale);
+        ImGui::TableSetupColumn("Relative Load %", ImGuiTableColumnFlags_WidthFixed, 140.0f * fonts.dpi_scale);
+        ImGui::TableSetupColumn("Cycle Delta / Sample", ImGuiTableColumnFlags_WidthFixed, 180.0f * fonts.dpi_scale);
+        ImGui::TableSetupColumn("Start Address", ImGuiTableColumnFlags_WidthFixed, 180.0f * fonts.dpi_scale);
         ImGui::TableSetupColumn("Module Origin", ImGuiTableColumnFlags_WidthStretch);
         ImGui::TableHeadersRow();
 
@@ -464,7 +555,9 @@ void DashboardView::render_thread_inspector(
 
             // TID
             ImGui::TableSetColumnIndex(0);
+            ImGui::PushFont(fonts.mono);
             ImGui::Text("%u", t.tid);
+            ImGui::PopFont();
 
             // Load %
             ImGui::TableSetColumnIndex(1);
@@ -476,11 +569,15 @@ void DashboardView::render_thread_inspector(
 
             // Cycle Delta
             ImGui::TableSetColumnIndex(2);
+            ImGui::PushFont(fonts.mono);
             ImGui::Text("%llu", t.cycle_delta);
+            ImGui::PopFont();
 
             // Start Address
             ImGui::TableSetColumnIndex(3);
+            ImGui::PushFont(fonts.mono);
             ImGui::Text("0x%llX", static_cast<unsigned long long>(t.start_address));
+            ImGui::PopFont();
 
             // Module Name
             ImGui::TableSetColumnIndex(4);
@@ -499,27 +596,30 @@ void DashboardView::render_thread_inspector(
 void DashboardView::render_benchmark_tab(
     const ProcessMonitor& proc_mon,
     const GpuMetrics& gpu,
-    const FrameStats& frames
+    const FrameStats& frames,
+    const AppFonts& fonts
 ) {
-    ImGui::Text("Comparative Overhead Benchmark");
+    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.35f, 1.0f), "COMPARATIVE IMPACT BENCHMARK");
     ImGui::TextDisabled("Run controlled sampling sessions to compute the exact resource footprint across all monitored applications.");
     ImGui::Spacing();
 
-    ImGui::SetNextItemWidth(160);
+    ImGui::SetNextItemWidth(160.0f * fonts.dpi_scale);
     ImGui::SliderInt("Session Duration (sec)", &benchmark_duration_sec_, 10, 120);
 
     if (!is_benchmarking_) {
-        if (ImGui::Button("Start Benchmark Session", ImVec2(220, 32))) {
+        ImGui::PushFont(fonts.bold);
+        if (ImGui::Button("START BENCHMARK SESSION", ImVec2(240.0f * fonts.dpi_scale, 36.0f * fonts.dpi_scale))) {
             is_benchmarking_ = true;
             benchmark_start_time_ = ImGui::GetTime();
             current_benchmark_frametimes_.clear();
         }
+        ImGui::PopFont();
     } else {
         double elapsed = ImGui::GetTime() - benchmark_start_time_;
         float progress = static_cast<float>(elapsed / benchmark_duration_sec_);
         if (progress > 1.0f) progress = 1.0f;
 
-        ImGui::ProgressBar(progress, ImVec2(320, 28));
+        ImGui::ProgressBar(progress, ImVec2(340.0f * fonts.dpi_scale, 32.0f * fonts.dpi_scale));
         ImGui::SameLine();
         if (ImGui::Button("Cancel")) {
             is_benchmarking_ = false;
@@ -558,9 +658,11 @@ void DashboardView::render_benchmark_tab(
     if (!last_generated_report_path_.empty()) {
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.65f, 0.35f, 0.9f));
-        if (ImGui::Button("🌐 Open Interactive Browser Report & Share Card", ImVec2(380, 34))) {
+        ImGui::PushFont(fonts.bold);
+        if (ImGui::Button("🌐 OPEN INTERACTIVE BROWSER REPORT & SHARE CARD", ImVec2(440.0f * fonts.dpi_scale, 36.0f * fonts.dpi_scale))) {
             ReportGenerator::open_in_browser(last_generated_report_path_);
         }
+        ImGui::PopFont();
         ImGui::PopStyleColor();
     }
 
@@ -593,19 +695,19 @@ void DashboardView::render_benchmark_tab(
     }
 }
 
-void DashboardView::render_settings_tab(ConfigManager& config_mgr) {
+void DashboardView::render_settings_tab(ConfigManager& config_mgr, const AppFonts& fonts) {
     auto& hud = config_mgr.get_hud();
     auto& hotkeys = config_mgr.get_hotkeys();
 
-    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.35f, 1.0f), "RTSS MINI-OVERLAY CUSTOMIZATION");
-    ImGui::TextDisabled("Customize position, layout, visible hardware sensors, and the frametime graph.");
+    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.35f, 1.0f), "RTSS MINI-OVERLAY & HUD CUSTOMIZATION");
+    ImGui::TextDisabled("Configure on-screen position, font scale, background opacity, and frametime graph.");
     ImGui::Spacing();
 
-    // 1. Position & Layout
+    // 1. Position Grid Selector
     ImGui::Text("Overlay Screen Position:");
     const char* pos_names[] = { "Top-Left", "Top-Right", "Bottom-Left", "Bottom-Right", "Custom (Free Coordinates)" };
     int current_pos = static_cast<int>(hud.position);
-    ImGui::SetNextItemWidth(260);
+    ImGui::SetNextItemWidth(280.0f * fonts.dpi_scale);
     if (ImGui::Combo("##HudPosCombo", &current_pos, pos_names, IM_ARRAYSIZE(pos_names))) {
         hud.position = static_cast<HudPosition>(current_pos);
     }
@@ -617,7 +719,7 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr) {
         ImGui::Unindent(20.0f);
     }
 
-    ImGui::SliderFloat("HUD Background Glass Opacity", &hud.bg_opacity, 0.1f, 1.0f, "%.2f");
+    ImGui::SliderFloat("HUD Glass Background Opacity", &hud.bg_opacity, 0.1f, 1.0f, "%.2f");
     ImGui::SliderFloat("HUD Font Scale", &hud.font_scale, 0.75f, 1.50f, "%.2fx");
 
     ImGui::Separator();
@@ -630,7 +732,7 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr) {
         ImGui::Indent(20.0f);
         ImGui::SliderFloat("Graph Height (px)", &hud.frametime_graph_height, 20.0f, 90.0f, "%.0f px");
         ImGui::SliderFloat("Graph Scale Target (ms)", &hud.frametime_graph_max_ms, 16.6f, 60.0f, "%.1f ms");
-        ImGui::TextDisabled("Default: 33.3 ms (30-60 FPS window). Line targets: 16.6ms (60 FPS), 6.9ms (144 FPS).");
+        ImGui::TextDisabled("Target baselines: 16.6 ms (60 FPS), 6.9 ms (144 FPS).");
         ImGui::Unindent(20.0f);
     }
 
@@ -661,14 +763,16 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr) {
     ImGui::Spacing();
 
     // 4. Hotkeys Configuration
-    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.35f, 1.0f), "HOTKEYS");
+    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.35f, 1.0f), "HOTKEYS & SHORTCUTS");
     ImGui::Text("Toggle HUD: %s (Press to toggle overlay)", ConfigManager::key_to_string(hotkeys.toggle_overlay_key).c_str());
     ImGui::Text("Toggle Benchmark: %s (Press to start/stop benchmark run)", ConfigManager::key_to_string(hotkeys.toggle_benchmark_key).c_str());
 
     ImGui::Spacing();
-    if (ImGui::Button("💾 Save Configuration to Disk", ImVec2(240, 32))) {
+    ImGui::PushFont(fonts.bold);
+    if (ImGui::Button("💾 SAVE CONFIGURATION (anyperf_config.json)", ImVec2(320.0f * fonts.dpi_scale, 36.0f * fonts.dpi_scale))) {
         config_mgr.save_to_file();
     }
+    ImGui::PopFont();
 }
 
 void DashboardView::render_rtss_mini_hud(
@@ -682,17 +786,18 @@ void DashboardView::render_rtss_mini_hud(
 ) {
     const auto& hud = config_mgr.get_hud();
     const auto& targets = proc_mon.get_monitored_targets();
+    const auto& fonts = backend.get_fonts();
 
     // Compute dynamic window dimensions
-    float hud_width = 320.0f * hud.font_scale;
-    float hud_height = 80.0f * hud.font_scale;
+    float hud_width = 320.0f * hud.font_scale * fonts.dpi_scale;
+    float hud_height = 80.0f * hud.font_scale * fonts.dpi_scale;
 
-    if (hud.show_gpu_usage || hud.show_gpu_temp) hud_height += 24.0f * hud.font_scale;
-    if (hud.show_cpu_usage) hud_height += 24.0f * hud.font_scale;
-    if (hud.show_fps) hud_height += 24.0f * hud.font_scale;
-    if (hud.show_frametime_graph) hud_height += (hud.frametime_graph_height + 14.0f) * hud.font_scale;
+    if (hud.show_gpu_usage || hud.show_gpu_temp) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
+    if (hud.show_cpu_usage) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
+    if (hud.show_fps) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
+    if (hud.show_frametime_graph) hud_height += (hud.frametime_graph_height + 14.0f) * hud.font_scale * fonts.dpi_scale;
     if (hud.show_secondary_apps && !targets.empty()) {
-        hud_height += (static_cast<float>(targets.size()) * 22.0f + 16.0f) * hud.font_scale;
+        hud_height += (static_cast<float>(targets.size()) * 22.0f + 16.0f) * hud.font_scale * fonts.dpi_scale;
     }
 
     // Screen positioning
@@ -736,15 +841,19 @@ void DashboardView::render_rtss_mini_hud(
     ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.85f, 0.18f, 0.25f, 0.6f));
 
     ImGui::Begin("AnyPerfRTSSHud", nullptr, flags);
-    ImGui::SetWindowFontScale(hud.font_scale);
 
     // Title / Switch button
+    ImGui::PushFont(fonts.bold);
     ImGui::TextColored(ImVec4(1.00f, 0.25f, 0.35f, 1.0f), "ANYPERFOMANS");
-    ImGui::SameLine(ImGui::GetWindowWidth() - 75.0f * hud.font_scale);
+    ImGui::PopFont();
+    ImGui::SameLine(ImGui::GetWindowWidth() - 75.0f * hud.font_scale * fonts.dpi_scale);
     if (ImGui::SmallButton("Full [F11]")) {
         current_mode = OverlayMode::Dashboard;
     }
     ImGui::Separator();
+
+    // Switch to Monospace Font for Razor-Sharp RTSS HUD Numbers
+    ImGui::PushFont(fonts.mono);
 
     // 1. GPU Row
     if (hud.show_gpu_usage || hud.show_gpu_temp || hud.show_gpu_vram) {
@@ -791,7 +900,7 @@ void DashboardView::render_rtss_mini_hud(
         ImGui::Text("%s", fps_ss.str().c_str());
     }
 
-    // 4. Configurable Frametime Graph
+    // 4. Configurable Frametime Graph Sparkline
     if (hud.show_frametime_graph) {
         std::vector<float> ft_data;
         frametime_history_.get_linear(ft_data);
@@ -805,7 +914,7 @@ void DashboardView::render_rtss_mini_hud(
                 nullptr,
                 0.0f,
                 hud.frametime_graph_max_ms,
-                ImVec2(graph_width, hud.frametime_graph_height * hud.font_scale)
+                ImVec2(graph_width, hud.frametime_graph_height * hud.font_scale * fonts.dpi_scale)
             );
             ImGui::PopStyleColor();
         }
@@ -815,7 +924,7 @@ void DashboardView::render_rtss_mini_hud(
     if (hud.show_secondary_apps && !targets.empty()) {
         ImGui::Separator();
         for (const auto& t : targets) {
-            if (t.is_primary) continue; // Skip primary, already displayed
+            if (t.is_primary) continue;
             float ram_mb = static_cast<float>(t.private_working_set) / (1024.0f * 1024.0f);
             ImVec4 col(t.color.r, t.color.g, t.color.b, 1.0f);
 
@@ -826,6 +935,8 @@ void DashboardView::render_rtss_mini_hud(
             );
         }
     }
+
+    ImGui::PopFont(); // Pop fonts.mono
 
     ImGui::End();
 
