@@ -51,12 +51,12 @@ void Dx11Backend::setup_modern_imgui_style() {
     ImGuiStyle& style = ImGui::GetStyle();
     ImVec4* colors = style.Colors;
 
-    style.WindowRounding = 8.0f;
-    style.ChildRounding = 6.0f;
-    style.FrameRounding = 5.0f;
-    style.PopupRounding = 6.0f;
+    style.WindowRounding = 10.0f;
+    style.ChildRounding = 8.0f;
+    style.FrameRounding = 6.0f;
+    style.PopupRounding = 8.0f;
     style.ScrollbarRounding = 9.0f;
-    style.GrabRounding = 5.0f;
+    style.GrabRounding = 6.0f;
     style.TabRounding = 6.0f;
 
     style.WindowPadding = ImVec2(14.0f, 14.0f);
@@ -64,41 +64,41 @@ void Dx11Backend::setup_modern_imgui_style() {
     style.ItemSpacing = ImVec2(10.0f, 8.0f);
     style.ItemInnerSpacing = ImVec2(6.0f, 6.0f);
 
-    // Deep Dark & Cyber Teal Palette
-    colors[ImGuiCol_Text]                  = ImVec4(0.95f, 0.96f, 0.98f, 1.00f);
-    colors[ImGuiCol_TextDisabled]          = ImVec4(0.50f, 0.55f, 0.60f, 1.00f);
-    colors[ImGuiCol_WindowBg]              = ImVec4(0.08f, 0.09f, 0.12f, 0.96f);
-    colors[ImGuiCol_ChildBg]               = ImVec4(0.11f, 0.12f, 0.16f, 0.80f);
-    colors[ImGuiCol_PopupBg]               = ImVec4(0.10f, 0.11f, 0.15f, 0.96f);
-    colors[ImGuiCol_Border]                = ImVec4(0.20f, 0.22f, 0.28f, 0.60f);
+    // ASUS ROG Red & Black + Liquid Glass Palette
+    colors[ImGuiCol_Text]                  = ImVec4(0.96f, 0.96f, 0.98f, 1.00f);
+    colors[ImGuiCol_TextDisabled]          = ImVec4(0.55f, 0.58f, 0.65f, 1.00f);
+    colors[ImGuiCol_WindowBg]              = ImVec4(0.06f, 0.07f, 0.09f, 0.98f); // Obsidian Deep Black
+    colors[ImGuiCol_ChildBg]               = ImVec4(0.09f, 0.10f, 0.14f, 0.82f); // Dark Liquid Glass
+    colors[ImGuiCol_PopupBg]               = ImVec4(0.08f, 0.09f, 0.12f, 0.98f);
+    colors[ImGuiCol_Border]                = ImVec4(0.85f, 0.18f, 0.25f, 0.35f); // Subtle Crimson Edge Glow
     colors[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    colors[ImGuiCol_FrameBg]               = ImVec4(0.14f, 0.16f, 0.22f, 0.80f);
-    colors[ImGuiCol_FrameBgHovered]        = ImVec4(0.20f, 0.24f, 0.32f, 0.80f);
-    colors[ImGuiCol_FrameBgActive]         = ImVec4(0.24f, 0.28f, 0.38f, 0.80f);
-    colors[ImGuiCol_TitleBg]               = ImVec4(0.08f, 0.09f, 0.12f, 1.00f);
-    colors[ImGuiCol_TitleBgActive]         = ImVec4(0.10f, 0.12f, 0.18f, 1.00f);
-    colors[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.08f, 0.09f, 0.12f, 0.75f);
-    colors[ImGuiCol_MenuBarBg]             = ImVec4(0.11f, 0.12f, 0.16f, 1.00f);
-    colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.08f, 0.09f, 0.12f, 0.60f);
-    colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.22f, 0.26f, 0.35f, 0.80f);
-    colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.28f, 0.33f, 0.45f, 0.80f);
-    colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.35f, 0.42f, 0.58f, 0.80f);
-    colors[ImGuiCol_CheckMark]             = ImVec4(0.26f, 0.78f, 0.86f, 1.00f);
-    colors[ImGuiCol_SliderGrab]            = ImVec4(0.26f, 0.78f, 0.86f, 0.80f);
-    colors[ImGuiCol_SliderGrabActive]      = ImVec4(0.32f, 0.90f, 1.00f, 1.00f);
-    colors[ImGuiCol_Button]                = ImVec4(0.18f, 0.22f, 0.30f, 0.80f);
-    colors[ImGuiCol_ButtonHovered]         = ImVec4(0.26f, 0.48f, 0.68f, 0.80f);
-    colors[ImGuiCol_ButtonActive]          = ImVec4(0.20f, 0.60f, 0.80f, 1.00f);
-    colors[ImGuiCol_Header]                = ImVec4(0.16f, 0.20f, 0.28f, 0.80f);
-    colors[ImGuiCol_HeaderHovered]         = ImVec4(0.24f, 0.35f, 0.50f, 0.80f);
-    colors[ImGuiCol_HeaderActive]          = ImVec4(0.20f, 0.45f, 0.65f, 0.80f);
-    colors[ImGuiCol_Separator]             = ImVec4(0.20f, 0.24f, 0.30f, 0.50f);
-    colors[ImGuiCol_Tab]                   = ImVec4(0.12f, 0.14f, 0.19f, 0.80f);
-    colors[ImGuiCol_TabHovered]            = ImVec4(0.22f, 0.32f, 0.45f, 0.80f);
-    colors[ImGuiCol_TabActive]             = ImVec4(0.18f, 0.28f, 0.40f, 1.00f);
-    colors[ImGuiCol_PlotLines]             = ImVec4(0.26f, 0.78f, 0.86f, 1.00f);
-    colors[ImGuiCol_PlotLinesHovered]      = ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
-    colors[ImGuiCol_PlotHistogram]         = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
+    colors[ImGuiCol_FrameBg]               = ImVec4(0.12f, 0.14f, 0.19f, 0.85f);
+    colors[ImGuiCol_FrameBgHovered]        = ImVec4(0.24f, 0.14f, 0.18f, 0.85f);
+    colors[ImGuiCol_FrameBgActive]         = ImVec4(0.32f, 0.16f, 0.22f, 0.90f);
+    colors[ImGuiCol_TitleBg]               = ImVec4(0.06f, 0.07f, 0.09f, 1.00f);
+    colors[ImGuiCol_TitleBgActive]         = ImVec4(0.14f, 0.08f, 0.10f, 1.00f);
+    colors[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.06f, 0.07f, 0.09f, 0.75f);
+    colors[ImGuiCol_MenuBarBg]             = ImVec4(0.09f, 0.10f, 0.13f, 1.00f);
+    colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.06f, 0.07f, 0.09f, 0.60f);
+    colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.35f, 0.15f, 0.20f, 0.80f);
+    colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.55f, 0.18f, 0.25f, 0.90f);
+    colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.80f, 0.18f, 0.25f, 1.00f);
+    colors[ImGuiCol_CheckMark]             = ImVec4(1.00f, 0.22f, 0.32f, 1.00f); // ROG Crimson
+    colors[ImGuiCol_SliderGrab]            = ImVec4(0.92f, 0.20f, 0.28f, 0.90f);
+    colors[ImGuiCol_SliderGrabActive]      = ImVec4(1.00f, 0.30f, 0.38f, 1.00f);
+    colors[ImGuiCol_Button]                = ImVec4(0.70f, 0.14f, 0.22f, 0.80f); // Crimson Glass Button
+    colors[ImGuiCol_ButtonHovered]         = ImVec4(0.92f, 0.20f, 0.30f, 0.90f);
+    colors[ImGuiCol_ButtonActive]          = ImVec4(0.55f, 0.10f, 0.16f, 1.00f);
+    colors[ImGuiCol_Header]                = ImVec4(0.40f, 0.12f, 0.18f, 0.70f);
+    colors[ImGuiCol_HeaderHovered]         = ImVec4(0.60f, 0.16f, 0.24f, 0.80f);
+    colors[ImGuiCol_HeaderActive]          = ImVec4(0.75f, 0.18f, 0.28f, 0.90f);
+    colors[ImGuiCol_Separator]             = ImVec4(0.45f, 0.15f, 0.20f, 0.40f);
+    colors[ImGuiCol_Tab]                   = ImVec4(0.12f, 0.14f, 0.18f, 0.80f);
+    colors[ImGuiCol_TabHovered]            = ImVec4(0.45f, 0.15f, 0.22f, 0.80f);
+    colors[ImGuiCol_TabActive]             = ImVec4(0.75f, 0.15f, 0.22f, 0.95f);
+    colors[ImGuiCol_PlotLines]             = ImVec4(1.00f, 0.24f, 0.32f, 1.00f); // Red Glow Lines
+    colors[ImGuiCol_PlotLinesHovered]      = ImVec4(1.00f, 0.50f, 0.40f, 1.00f);
+    colors[ImGuiCol_PlotHistogram]         = ImVec4(1.00f, 0.30f, 0.38f, 1.00f);
 }
 
 bool Dx11Backend::init(int width, int height, const std::wstring& title) {
@@ -187,6 +187,11 @@ void Dx11Backend::set_overlay_mode(OverlayMode mode) {
 
         SetWindowPos(hwnd_, HWND_NOTOPMOST, 100, 100, 1280, 800, SWP_SHOWWINDOW | SWP_FRAMECHANGED);
     }
+}
+
+void Dx11Backend::set_overlay_position(int x, int y, int w, int h) {
+    if (!hwnd_ || current_mode_ != OverlayMode::MiniHud) return;
+    SetWindowPos(hwnd_, HWND_TOPMOST, x, y, w, h, SWP_SHOWWINDOW | SWP_NOACTIVATE);
 }
 
 bool Dx11Backend::create_device_and_swapchain() {

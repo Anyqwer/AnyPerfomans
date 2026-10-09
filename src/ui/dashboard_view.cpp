@@ -1,5 +1,7 @@
 #include "anyperf/dashboard_view.hpp"
 #include "anyperf/etw_tracker.hpp"
+#include "anyperf/dx11_backend.hpp"
+#include "anyperf/report_generator.hpp"
 #include <imgui.h>
 #include <implot.h>
 #include <sstream>
@@ -33,9 +35,15 @@ DashboardView::DashboardView() {
 
 void DashboardView::push_metrics_sample(
     const std::vector<ProcessMetrics>& targets,
-    const FrameStats& frame_stats
+    const FrameStats& frame_stats,
+    const GpuMetrics& gpu_metrics
 ) {
     frametime_history_.push(static_cast<float>(frame_stats.frametime_ms));
+    gpu_usage_history_.push(static_cast<float>(gpu_metrics.core_usage_percent));
+
+    if (is_benchmarking_) {
+        current_benchmark_frametimes_.push_back(static_cast<float>(frame_stats.frametime_ms));
+    }
 
     for (const auto& target : targets) {
         if (cpu_histories_.find(target.pid) == cpu_histories_.end()) {
@@ -54,11 +62,14 @@ void DashboardView::render(
     ProcessMonitor& proc_mon,
     ThreadProfiler& thread_prof,
     EtwTracker& etw_tracker,
+    GpuMonitor& gpu_mon,
+    ConfigManager& config_mgr,
+    Dx11Backend& backend,
     const FrameStats& frame_stats,
     OverlayMode& current_mode
 ) {
     if (current_mode == OverlayMode::MiniHud) {
-        render_mini_hud(proc_mon, etw_tracker, frame_stats, current_mode);
+        render_rtss_mini_hud(proc_mon, etw_tracker, gpu_mon.get_metrics(), config_mgr, backend, frame_stats, current_mode);
         return;
     }
 
@@ -77,13 +88,13 @@ void DashboardView::render(
     ImGui::Separator();
     ImGui::Spacing();
 
-    render_summary_cards(proc_mon, etw_tracker, frame_stats);
+    render_summary_cards(proc_mon, etw_tracker, gpu_mon.get_metrics(), frame_stats);
 
     ImGui::Spacing();
 
     if (ImGui::BeginTabBar("MainTabs")) {
         if (ImGui::BeginTabItem("Telemetry & Multi-Process Charts")) {
-            render_telemetry_plots(proc_mon);
+            render_telemetry_plots(proc_mon, gpu_mon.get_metrics());
             ImGui::EndTabItem();
         }
 
@@ -93,7 +104,12 @@ void DashboardView::render(
         }
 
         if (ImGui::BeginTabItem("Comparative Impact Benchmark")) {
-            render_benchmark_tab(proc_mon, frame_stats);
+            render_benchmark_tab(proc_mon, gpu_mon.get_metrics(), frame_stats);
+            ImGui::EndTabItem();
+        }
+
+        if (ImGui::BeginTabItem("HUD & Hotkey Settings")) {
+            render_settings_tab(config_mgr);
             ImGui::EndTabItem();
         }
 
@@ -104,16 +120,16 @@ void DashboardView::render(
 }
 
 void DashboardView::render_top_bar(ProcessMonitor& proc_mon, EtwTracker& etw_tracker, OverlayMode& current_mode) {
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.26f, 0.78f, 0.95f, 1.0f));
-    ImGui::Text("ANYPERFOMANS");
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.22f, 0.32f, 1.0f));
+    ImGui::Text("⚡ ANYPERFOMANS");
     ImGui::PopStyleColor();
     ImGui::SameLine();
-    ImGui::TextDisabled("v0.1.0 | Multi-Process Overhead Profiler");
+    ImGui::TextDisabled("v0.2.0 | ROG Liquid Glass Edition");
 
     // ETW Status Indicator
     ImGui::SameLine();
     if (etw_tracker.is_active()) {
-        ImGui::TextColored(ImVec4(0.20f, 0.85f, 0.55f, 1.0f), "[Kernel ETW: Active]");
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.45f, 1.0f), "[Kernel ETW: Active]");
     } else if (etw_tracker.get_state() == EtwState::AccessDenied) {
         ImGui::TextColored(ImVec4(1.00f, 0.55f, 0.20f, 1.0f), "[ETW: Non-Elevated]");
         ImGui::SameLine();
@@ -230,11 +246,12 @@ void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon) {
 void DashboardView::render_summary_cards(
     const ProcessMonitor& proc_mon,
     const EtwTracker& etw_tracker,
+    const GpuMetrics& gpu,
     const FrameStats& frame_stats
 ) {
     float avail_width = ImGui::GetContentRegionAvail().x;
     float card_width = (avail_width - 30.0f) / 4.0f;
-    float card_height = 84.0f;
+    float card_height = 86.0f;
 
     const auto* primary = proc_mon.get_primary_target();
     double total_sec_cpu = proc_mon.get_total_secondary_cpu();
@@ -243,11 +260,11 @@ void DashboardView::render_summary_cards(
     // Card 1: Frame Rates & Latency
     ImGui::BeginChild("CardFPS", ImVec2(card_width, card_height), true);
     if (etw_tracker.is_active()) {
-        ImGui::TextColored(ImVec4(0.20f, 0.85f, 0.55f, 1.0f), "KERNEL PRESENTMON (ETW)");
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.45f, 1.0f), "KERNEL PRESENTMON (ETW)");
     } else {
         ImGui::TextDisabled("FRAME TIMING (LOCAL)");
     }
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.26f, 0.90f, 0.50f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.90f, 0.45f, 1.0f));
     ImGui::SetWindowFontScale(1.3f);
     ImGui::Text("%.1f FPS", frame_stats.current_fps);
     ImGui::SetWindowFontScale(1.0f);
@@ -257,7 +274,25 @@ void DashboardView::render_summary_cards(
 
     ImGui::SameLine();
 
-    // Card 2: Primary Process
+    // Card 2: GPU Telemetry Card
+    ImGui::BeginChild("CardGPU", ImVec2(card_width, card_height), true);
+    ImGui::TextDisabled("GPU TELEMETRY");
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.30f, 0.40f, 1.0f));
+    ImGui::SetWindowFontScale(1.3f);
+    ImGui::Text("%d%% GPU", gpu.core_usage_percent);
+    ImGui::SetWindowFontScale(1.0f);
+    ImGui::PopStyleColor();
+    float vram_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);
+    if (gpu.temperature_c > 0) {
+        ImGui::Text("%d°C | VRAM: %.0f MB | %d MHz", gpu.temperature_c, vram_mb, gpu.core_clock_mhz);
+    } else {
+        ImGui::Text("VRAM: %.0f MB (%s)", vram_mb, wide_to_utf8(gpu.adapter_name).substr(0, 15).c_str());
+    }
+    ImGui::EndChild();
+
+    ImGui::SameLine();
+
+    // Card 3: Primary Process
     ImGui::BeginChild("CardPrimary", ImVec2(card_width, card_height), true);
     ImGui::TextDisabled("PRIMARY TARGET");
     if (primary && primary->is_alive) {
@@ -267,18 +302,18 @@ void DashboardView::render_summary_cards(
         ImGui::SetWindowFontScale(1.0f);
         ImGui::PopStyleColor();
         float ram_mb = static_cast<float>(primary->private_working_set) / (1024.0f * 1024.0f);
-        ImGui::Text("%s | %.0f MB RAM", wide_to_utf8(primary->name).c_str(), ram_mb);
+        ImGui::Text("%s | %.0f MB Private", wide_to_utf8(primary->name).c_str(), ram_mb);
     } else {
-        ImGui::TextDisabled("No primary target");
+        ImGui::TextDisabled("No primary target selected");
     }
     ImGui::EndChild();
 
     ImGui::SameLine();
 
-    // Card 3: Secondary Background Total
+    // Card 4: Secondary Background Overhead Total
     ImGui::BeginChild("CardSecondary", ImVec2(card_width, card_height), true);
     ImGui::TextDisabled("SECONDARY APPS OVERHEAD");
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.35f, 0.45f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.22f, 0.32f, 1.0f));
     ImGui::SetWindowFontScale(1.3f);
     ImGui::Text("+%.2f%% CPU", total_sec_cpu);
     ImGui::SetWindowFontScale(1.0f);
@@ -287,24 +322,9 @@ void DashboardView::render_summary_cards(
     double overhead_ratio = (primary && primary->cpu_percent > 0.0) ? (total_sec_cpu / primary->cpu_percent * 100.0) : 0.0;
     ImGui::Text("%.0f MB Total RAM | +%.1f%% Tax", sec_ram_mb, overhead_ratio);
     ImGui::EndChild();
-
-    ImGui::SameLine();
-
-    // Card 4: Active Targets Count
-    ImGui::BeginChild("CardTargets", ImVec2(card_width, card_height), true);
-    ImGui::TextDisabled("MONITORED TARGETS");
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.45f, 0.95f, 1.0f));
-    ImGui::SetWindowFontScale(1.3f);
-    ImGui::Text("%zu Targets", proc_mon.get_monitored_targets().size());
-    ImGui::SetWindowFontScale(1.0f);
-    ImGui::PopStyleColor();
-    size_t total_threads = 0;
-    for (const auto& t : proc_mon.get_monitored_targets()) total_threads += t.thread_count;
-    ImGui::Text("Total Threads: %zu", total_threads);
-    ImGui::EndChild();
 }
 
-void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon) {
+void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon, const GpuMetrics& gpu) {
     float avail_width = ImGui::GetContentRegionAvail().x;
     float plot_height = 230.0f;
     const auto& targets = proc_mon.get_monitored_targets();
@@ -318,25 +338,34 @@ void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon) {
         frametime_history_.get_linear(ft_data);
 
         if (!ft_data.empty()) {
-            ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(0.26f, 0.90f, 0.50f, 1.0f));
+            ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(1.00f, 0.24f, 0.32f, 1.0f));
             ImPlot::PlotLine("Frametime", ft_data.data(), (int)ft_data.size());
             ImPlot::PopStyleColor();
         }
 
         ImPlot::TagY(16.666, ImVec4(0.9f, 0.3f, 0.3f, 0.8f), "60 FPS (16.6ms)");
-        ImPlot::TagY(6.944, ImVec4(0.3f, 0.8f, 0.9f, 0.8f), "144 FPS (6.9ms)");
+        ImPlot::TagY(6.944, ImVec4(0.0f, 0.85f, 0.5f, 0.8f), "144 FPS (6.9ms)");
 
         ImPlot::EndPlot();
     }
 
     ImGui::Spacing();
 
-    // 2. Multi-Series CPU Comparison Plot
+    // 2. Multi-Series CPU & GPU Utilization
     float half_width = (avail_width - 15.0f) / 2.0f;
 
-    if (ImPlot::BeginPlot("Multi-Process CPU Utilization (%)", ImVec2(half_width, plot_height))) {
-        ImPlot::SetupAxes("Timeline", "CPU %", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
+    if (ImPlot::BeginPlot("Hardware & Process Load (%)", ImVec2(half_width, plot_height))) {
+        ImPlot::SetupAxes("Timeline", "Load %", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
         ImPlot::SetupAxisLimits(ImAxis_Y1, 0.0, 100.0, ImPlotCond_Always);
+
+        // GPU Line
+        std::vector<float> gpu_data;
+        gpu_usage_history_.get_linear(gpu_data);
+        if (!gpu_data.empty()) {
+            ImPlot::PushStyleColor(ImPlotCol_Line, ImVec4(1.00f, 0.40f, 0.20f, 1.0f));
+            ImPlot::PlotLine("GPU Core Load %", gpu_data.data(), (int)gpu_data.size());
+            ImPlot::PopStyleColor();
+        }
 
         for (const auto& t : targets) {
             auto it = cpu_histories_.find(t.pid);
@@ -358,7 +387,7 @@ void DashboardView::render_telemetry_plots(const ProcessMonitor& proc_mon) {
     ImGui::SameLine();
 
     // 3. Multi-Series RAM Comparison Plot
-    if (ImPlot::BeginPlot("Multi-Process Private RAM Footprint (MB)", ImVec2(half_width, plot_height))) {
+    if (ImPlot::BeginPlot("Process Memory Footprint (MB)", ImVec2(half_width, plot_height))) {
         ImPlot::SetupAxes("Timeline", "MB", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
 
         for (const auto& t : targets) {
@@ -389,7 +418,6 @@ void DashboardView::render_thread_inspector(
         return;
     }
 
-    // Default inspector PID to primary target
     if (selected_inspector_pid_ == 0 || !proc_mon.is_monitored(selected_inspector_pid_)) {
         const auto* primary = proc_mon.get_primary_target();
         if (primary) selected_inspector_pid_ = primary->pid;
@@ -441,7 +469,7 @@ void DashboardView::render_thread_inspector(
             // Load %
             ImGui::TableSetColumnIndex(1);
             if (t.cpu_percent > 20.0) {
-                ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%.1f%%", t.cpu_percent);
+                ImGui::TextColored(ImVec4(1.0f, 0.3f, 0.3f, 1.0f), "%.1f%%", t.cpu_percent);
             } else {
                 ImGui::Text("%.1f%%", t.cpu_percent);
             }
@@ -470,6 +498,7 @@ void DashboardView::render_thread_inspector(
 
 void DashboardView::render_benchmark_tab(
     const ProcessMonitor& proc_mon,
+    const GpuMetrics& gpu,
     const FrameStats& frames
 ) {
     ImGui::Text("Comparative Overhead Benchmark");
@@ -483,6 +512,7 @@ void DashboardView::render_benchmark_tab(
         if (ImGui::Button("Start Benchmark Session", ImVec2(220, 32))) {
             is_benchmarking_ = true;
             benchmark_start_time_ = ImGui::GetTime();
+            current_benchmark_frametimes_.clear();
         }
     } else {
         double elapsed = ImGui::GetTime() - benchmark_start_time_;
@@ -499,7 +529,7 @@ void DashboardView::render_benchmark_tab(
             is_benchmarking_ = false;
             BenchmarkRecord rec;
             const auto* primary = proc_mon.get_primary_target();
-            rec.session_name = primary ? (L"Run with " + primary->name) : L"Multi-Target Run";
+            rec.session_name = primary ? (L"Benchmark of " + primary->name) : L"Multi-Target Benchmark";
             rec.avg_fps = frames.avg_fps > 0 ? frames.avg_fps : frames.current_fps;
             rec.one_percent_low = frames.one_percent_low;
             rec.avg_frametime_ms = frames.frametime_ms;
@@ -515,7 +545,23 @@ void DashboardView::render_benchmark_tab(
             }
 
             benchmark_history_.push_back(rec);
+
+            // Auto-generate HTML report
+            last_generated_report_path_ = ReportGenerator::generate_html_report(
+                rec,
+                current_benchmark_frametimes_,
+                gpu
+            );
         }
+    }
+
+    if (!last_generated_report_path_.empty()) {
+        ImGui::Spacing();
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.65f, 0.35f, 0.9f));
+        if (ImGui::Button("🌐 Open Interactive Browser Report & Share Card", ImVec2(380, 34))) {
+            ReportGenerator::open_in_browser(last_generated_report_path_);
+        }
+        ImGui::PopStyleColor();
     }
 
     ImGui::Spacing();
@@ -547,18 +593,137 @@ void DashboardView::render_benchmark_tab(
     }
 }
 
-void DashboardView::render_mini_hud(
+void DashboardView::render_settings_tab(ConfigManager& config_mgr) {
+    auto& hud = config_mgr.get_hud();
+    auto& hotkeys = config_mgr.get_hotkeys();
+
+    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.35f, 1.0f), "RTSS MINI-OVERLAY CUSTOMIZATION");
+    ImGui::TextDisabled("Customize position, layout, visible hardware sensors, and the frametime graph.");
+    ImGui::Spacing();
+
+    // 1. Position & Layout
+    ImGui::Text("Overlay Screen Position:");
+    const char* pos_names[] = { "Top-Left", "Top-Right", "Bottom-Left", "Bottom-Right", "Custom (Free Coordinates)" };
+    int current_pos = static_cast<int>(hud.position);
+    ImGui::SetNextItemWidth(260);
+    if (ImGui::Combo("##HudPosCombo", &current_pos, pos_names, IM_ARRAYSIZE(pos_names))) {
+        hud.position = static_cast<HudPosition>(current_pos);
+    }
+
+    if (hud.position == HudPosition::Custom) {
+        ImGui::Indent(20.0f);
+        ImGui::SliderInt("Custom X Coordinate", &hud.custom_x, 0, 3840);
+        ImGui::SliderInt("Custom Y Coordinate", &hud.custom_y, 0, 2160);
+        ImGui::Unindent(20.0f);
+    }
+
+    ImGui::SliderFloat("HUD Background Glass Opacity", &hud.bg_opacity, 0.1f, 1.0f, "%.2f");
+    ImGui::SliderFloat("HUD Font Scale", &hud.font_scale, 0.75f, 1.50f, "%.2fx");
+
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // 2. Frametime Graph Customization
+    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.35f, 1.0f), "FRAMETIME GRAPH SETTINGS");
+    ImGui::Checkbox("Show Frametime Graph in HUD", &hud.show_frametime_graph);
+    if (hud.show_frametime_graph) {
+        ImGui::Indent(20.0f);
+        ImGui::SliderFloat("Graph Height (px)", &hud.frametime_graph_height, 20.0f, 90.0f, "%.0f px");
+        ImGui::SliderFloat("Graph Scale Target (ms)", &hud.frametime_graph_max_ms, 16.6f, 60.0f, "%.1f ms");
+        ImGui::TextDisabled("Default: 33.3 ms (30-60 FPS window). Line targets: 16.6ms (60 FPS), 6.9ms (144 FPS).");
+        ImGui::Unindent(20.0f);
+    }
+
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // 3. Sensor Toggles
+    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.35f, 1.0f), "DISPLAYED TELEMETRY ROWS");
+    ImGui::Columns(2, "SensorColumns", false);
+
+    ImGui::Checkbox("Show FPS", &hud.show_fps);
+    ImGui::Checkbox("Show 1% Low FPS", &hud.show_1pct_low);
+    ImGui::Checkbox("Show 0.1% Low FPS", &hud.show_01pct_low);
+    ImGui::Checkbox("Show Frametime (ms)", &hud.show_frametime_text);
+    ImGui::Checkbox("Show GPU Core Load %", &hud.show_gpu_usage);
+
+    ImGui::NextColumn();
+
+    ImGui::Checkbox("Show GPU Temperature °C", &hud.show_gpu_temp);
+    ImGui::Checkbox("Show GPU VRAM Usage", &hud.show_gpu_vram);
+    ImGui::Checkbox("Show GPU Core Clock (MHz)", &hud.show_gpu_clock);
+    ImGui::Checkbox("Show CPU Total Load %", &hud.show_cpu_usage);
+    ImGui::Checkbox("Show Monitored Secondary Apps", &hud.show_secondary_apps);
+
+    ImGui::Columns(1);
+
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // 4. Hotkeys Configuration
+    ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.35f, 1.0f), "HOTKEYS");
+    ImGui::Text("Toggle HUD: %s (Press to toggle overlay)", ConfigManager::key_to_string(hotkeys.toggle_overlay_key).c_str());
+    ImGui::Text("Toggle Benchmark: %s (Press to start/stop benchmark run)", ConfigManager::key_to_string(hotkeys.toggle_benchmark_key).c_str());
+
+    ImGui::Spacing();
+    if (ImGui::Button("💾 Save Configuration to Disk", ImVec2(240, 32))) {
+        config_mgr.save_to_file();
+    }
+}
+
+void DashboardView::render_rtss_mini_hud(
     const ProcessMonitor& proc_mon,
     const EtwTracker& etw_tracker,
+    const GpuMetrics& gpu,
+    const ConfigManager& config_mgr,
+    Dx11Backend& backend,
     const FrameStats& frames,
     OverlayMode& current_mode
 ) {
+    const auto& hud = config_mgr.get_hud();
     const auto& targets = proc_mon.get_monitored_targets();
-    float hud_height = 140.0f + static_cast<float>(targets.size()) * 26.0f;
-    if (hud_height < 180.0f) hud_height = 180.0f;
 
-    ImGui::SetNextWindowPos(ImVec2(10, 10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(360, hud_height), ImGuiCond_Always);
+    // Compute dynamic window dimensions
+    float hud_width = 320.0f * hud.font_scale;
+    float hud_height = 80.0f * hud.font_scale;
+
+    if (hud.show_gpu_usage || hud.show_gpu_temp) hud_height += 24.0f * hud.font_scale;
+    if (hud.show_cpu_usage) hud_height += 24.0f * hud.font_scale;
+    if (hud.show_fps) hud_height += 24.0f * hud.font_scale;
+    if (hud.show_frametime_graph) hud_height += (hud.frametime_graph_height + 14.0f) * hud.font_scale;
+    if (hud.show_secondary_apps && !targets.empty()) {
+        hud_height += (static_cast<float>(targets.size()) * 22.0f + 16.0f) * hud.font_scale;
+    }
+
+    // Screen positioning
+    int screen_w = GetSystemMetrics(SM_CXSCREEN);
+    int screen_h = GetSystemMetrics(SM_CYSCREEN);
+    int hud_x = 20;
+    int hud_y = 20;
+
+    switch (hud.position) {
+        case HudPosition::TopLeft:
+            hud_x = 20; hud_y = 20;
+            break;
+        case HudPosition::TopRight:
+            hud_x = screen_w - static_cast<int>(hud_width) - 20; hud_y = 20;
+            break;
+        case HudPosition::BottomLeft:
+            hud_x = 20; hud_y = screen_h - static_cast<int>(hud_height) - 40;
+            break;
+        case HudPosition::BottomRight:
+            hud_x = screen_w - static_cast<int>(hud_width) - 20;
+            hud_y = screen_h - static_cast<int>(hud_height) - 40;
+            break;
+        case HudPosition::Custom:
+            hud_x = hud.custom_x; hud_y = hud.custom_y;
+            break;
+    }
+
+    backend.set_overlay_position(hud_x, hud_y, static_cast<int>(hud_width), static_cast<int>(hud_height));
+
+    ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(hud_width, hud_height), ImGuiCond_Always);
 
     ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoTitleBar |
@@ -566,49 +731,99 @@ void DashboardView::render_mini_hud(
         ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoCollapse;
 
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.05f, 0.07f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.06f, 0.08f, hud.bg_opacity));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.26f, 0.78f, 0.86f, 0.6f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.85f, 0.18f, 0.25f, 0.6f));
 
-    ImGui::Begin("AnyPerfMiniHud", nullptr, flags);
+    ImGui::Begin("AnyPerfRTSSHud", nullptr, flags);
+    ImGui::SetWindowFontScale(hud.font_scale);
 
-    ImGui::TextColored(ImVec4(0.26f, 0.78f, 0.86f, 1.0f), "ANYPERFOMANS HUD");
-    ImGui::SameLine(ImGui::GetWindowWidth() - 75.0f);
+    // Title / Switch button
+    ImGui::TextColored(ImVec4(1.00f, 0.25f, 0.35f, 1.0f), "ANYPERFOMANS");
+    ImGui::SameLine(ImGui::GetWindowWidth() - 75.0f * hud.font_scale);
     if (ImGui::SmallButton("Full [F11]")) {
         current_mode = OverlayMode::Dashboard;
     }
-
     ImGui::Separator();
 
-    // FPS
-    if (etw_tracker.is_active()) {
-        ImGui::Text("FPS: %.1f (1%% Low: %.1f) [ETW]", frames.current_fps, frames.one_percent_low);
-    } else {
-        ImGui::Text("FPS: %.1f  (1%% Low: %.1f)", frames.current_fps, frames.one_percent_low);
+    // 1. GPU Row
+    if (hud.show_gpu_usage || hud.show_gpu_temp || hud.show_gpu_vram) {
+        ImGui::TextColored(ImVec4(1.00f, 0.35f, 0.45f, 1.0f), "GPU : ");
+        ImGui::SameLine();
+        std::stringstream gpu_ss;
+        if (hud.show_gpu_usage) gpu_ss << gpu.core_usage_percent << "% ";
+        if (hud.show_gpu_temp && gpu.temperature_c > 0) gpu_ss << "| " << gpu.temperature_c << "°C ";
+        if (hud.show_gpu_clock && gpu.core_clock_mhz > 0) gpu_ss << "| " << gpu.core_clock_mhz << " MHz ";
+        if (hud.show_gpu_vram) {
+            float vram_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);
+            gpu_ss << "| " << static_cast<int>(vram_mb) << " MB";
+        }
+        ImGui::Text("%s", gpu_ss.str().c_str());
     }
-    ImGui::Text("Frametime: %.2f ms", frames.frametime_ms);
 
-    ImGui::Separator();
+    // 2. CPU Row
+    if (hud.show_cpu_usage) {
+        const auto* primary = proc_mon.get_primary_target();
+        ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "CPU : ");
+        ImGui::SameLine();
+        if (primary && primary->is_alive) {
+            ImGui::Text("%.1f%%  (%s)", primary->cpu_percent, wide_to_utf8(primary->name).c_str());
+        } else {
+            ImGui::Text("Idle");
+        }
+    }
 
-    if (targets.empty()) {
-        ImGui::TextDisabled("No targets configured");
-    } else {
+    // 3. FPS & 1% Low Row
+    if (hud.show_fps) {
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.45f, 1.0f), "FPS : ");
+        ImGui::SameLine();
+        std::stringstream fps_ss;
+        fps_ss << std::fixed << std::setprecision(0) << frames.current_fps;
+        if (hud.show_1pct_low) {
+            fps_ss << "  (1%: " << std::fixed << std::setprecision(0) << frames.one_percent_low << ")";
+        }
+        if (hud.show_frametime_text) {
+            fps_ss << "  FT: " << std::fixed << std::setprecision(1) << frames.frametime_ms << "ms";
+        }
+        if (etw_tracker.is_active()) {
+            fps_ss << " [ETW]";
+        }
+        ImGui::Text("%s", fps_ss.str().c_str());
+    }
+
+    // 4. Configurable Frametime Graph
+    if (hud.show_frametime_graph) {
+        std::vector<float> ft_data;
+        frametime_history_.get_linear(ft_data);
+        if (!ft_data.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(1.00f, 0.25f, 0.35f, 1.0f));
+            float graph_width = ImGui::GetContentRegionAvail().x;
+            ImGui::PlotLines("##HudFrametimeGraph",
+                ft_data.data(),
+                static_cast<int>(ft_data.size()),
+                0,
+                nullptr,
+                0.0f,
+                hud.frametime_graph_max_ms,
+                ImVec2(graph_width, hud.frametime_graph_height * hud.font_scale)
+            );
+            ImGui::PopStyleColor();
+        }
+    }
+
+    // 5. Monitored Secondary Apps Breakdown
+    if (hud.show_secondary_apps && !targets.empty()) {
+        ImGui::Separator();
         for (const auto& t : targets) {
+            if (t.is_primary) continue; // Skip primary, already displayed
             float ram_mb = static_cast<float>(t.private_working_set) / (1024.0f * 1024.0f);
             ImVec4 col(t.color.r, t.color.g, t.color.b, 1.0f);
 
-            std::string prefix = t.is_primary ? "[P] " : "    ";
-            ImGui::TextColored(col, "%s%-14s: %5.1f%% | %4.0f MB",
-                prefix.c_str(),
-                wide_to_utf8(t.name).substr(0, 14).c_str(),
+            ImGui::TextColored(col, "%-12s: %4.1f%% | %3.0f MB",
+                wide_to_utf8(t.name).substr(0, 12).c_str(),
                 t.cpu_percent,
                 ram_mb
             );
-        }
-
-        double sec_cpu = proc_mon.get_total_secondary_cpu();
-        if (sec_cpu > 0.0) {
-            ImGui::TextDisabled("Secondary Total: +%.2f%% CPU overhead", sec_cpu);
         }
     }
 

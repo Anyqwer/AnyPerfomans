@@ -2,6 +2,8 @@
 #include "anyperf/process_monitor.hpp"
 #include "anyperf/thread_profiler.hpp"
 #include "anyperf/etw_tracker.hpp"
+#include "anyperf/gpu_monitor.hpp"
+#include "anyperf/config_manager.hpp"
 #include "anyperf/dashboard_view.hpp"
 #include <chrono>
 #include <thread>
@@ -10,19 +12,22 @@
 #include <algorithm>
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
+    anyperf::ConfigManager config_mgr;
     anyperf::Dx11Backend backend;
-    if (!backend.init(1320, 840, L"AnyPerfomans - Multi-Process Performance & Overhead Profiler")) {
+    if (!backend.init(1320, 840, L"AnyPerfomans - ROG Liquid Glass Edition")) {
         return 1;
     }
 
     anyperf::ProcessMonitor proc_mon;
     anyperf::ThreadProfiler thread_prof;
+    anyperf::GpuMonitor gpu_mon;
     anyperf::EtwTracker etw_tracker;
     anyperf::DashboardView dashboard_view;
 
     DWORD active_etw_pid = 0;
 
     auto last_telemetry_time = std::chrono::steady_clock::now();
+    auto last_gpu_time = std::chrono::steady_clock::now();
     auto last_thread_time = std::chrono::steady_clock::now();
     auto last_frame_time = std::chrono::steady_clock::now();
 
@@ -36,8 +41,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             break;
         }
 
-        // Toggle HUD on F11 hotkey
-        if (GetAsyncKeyState(VK_F11) & 1) {
+        // Configurable Hotkey: Toggle Overlay (Default: F11)
+        UINT toggle_key = config_mgr.get_hotkeys().toggle_overlay_key;
+        if (toggle_key != 0 && (GetAsyncKeyState(toggle_key) & 1)) {
             auto current_mode = backend.get_overlay_mode();
             auto new_mode = (current_mode == anyperf::OverlayMode::Dashboard)
                 ? anyperf::OverlayMode::MiniHud
@@ -59,12 +65,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             }
         }
 
-        // 2. Calculate frame stats (Prefer Kernel ETW Present if active, otherwise local fallback)
+        // 2. Sample GPU Telemetry (every 250ms)
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_gpu_time).count() >= 250) {
+            gpu_mon.update();
+            last_gpu_time = now;
+        }
+
+        // 3. Calculate frame stats (Prefer Kernel ETW Present if active, otherwise local fallback)
         anyperf::FrameStats display_frame_stats{};
         if (etw_tracker.is_active() && etw_tracker.get_frame_stats().total_frames > 0) {
             display_frame_stats = etw_tracker.get_frame_stats();
         } else {
-            // Local high-precision render frame timer
             double delta_ms = std::chrono::duration<double, std::milli>(now - last_frame_time).count();
             if (delta_ms > 0.1 && delta_ms < 1000.0) {
                 local_frame_stats.frametime_ms = delta_ms;
@@ -90,17 +101,18 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         }
         last_frame_time = now;
 
-        // 3. Sample high-precision multi-process telemetry (every 150ms)
+        // 4. Sample high-precision multi-process telemetry (every 150ms)
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_telemetry_time).count() >= 150) {
             proc_mon.update();
             dashboard_view.push_metrics_sample(
                 proc_mon.get_monitored_targets(),
-                display_frame_stats
+                display_frame_stats,
+                gpu_mon.get_metrics()
             );
             last_telemetry_time = now;
         }
 
-        // 4. Sample thread breakdown for the active primary process (every 500ms to keep overhead < 0.1%)
+        // 5. Sample thread breakdown for the active primary process (every 500ms to keep overhead < 0.1%)
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_thread_time).count() >= 500) {
             if (primary_pid != 0) {
                 thread_prof.update(primary_pid);
@@ -108,11 +120,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             last_thread_time = now;
         }
 
-        // 5. Render UI frame
+        // 6. Render UI frame
         backend.begin_frame();
 
         auto current_mode = backend.get_overlay_mode();
-        dashboard_view.render(proc_mon, thread_prof, etw_tracker, display_frame_stats, current_mode);
+        dashboard_view.render(
+            proc_mon,
+            thread_prof,
+            etw_tracker,
+            gpu_mon,
+            config_mgr,
+            backend,
+            display_frame_stats,
+            current_mode
+        );
 
         if (current_mode != backend.get_overlay_mode()) {
             backend.set_overlay_mode(current_mode);

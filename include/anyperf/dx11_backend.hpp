@@ -22,6 +22,7 @@ public:
     void end_frame();
 
     void set_overlay_mode(OverlayMode mode);
+    void set_overlay_position(int x, int y, int w, int h);
     OverlayMode get_overlay_mode() const { return current_mode_; }
 
     HWND get_hwnd() const { return hwnd_; }
