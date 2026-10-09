@@ -30,3 +30,16 @@
 *.exe
 *.out
 *.app
+
+# Build directories
+build/
+bin/
+out/
+.vs/
+*.sln.docstates
+*.suo
+*.user
+_deps/
+CMakeSettings.json
+compile_commands.json
+
