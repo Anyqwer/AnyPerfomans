@@ -2,9 +2,9 @@
 
 #include "anyperf/types.hpp"
 #include <vector>
-#include <memory>
 #include <unordered_map>
 #include <chrono>
+#include <string>
 
 namespace anyperf {
 
@@ -15,36 +15,34 @@ public:
 
     // Enumerate active processes in the system
     static std::vector<ProcessInfo> enumerate_processes();
+    static std::wstring get_process_name_by_pid(DWORD pid);
 
-    // Set target processes
-    void set_game_pid(DWORD pid);
-    void set_aux_pid(DWORD pid);
+    // Dynamic Multi-Process Target Management (N >= 2)
+    bool add_target(DWORD pid, const std::wstring& name = L"", bool is_primary = false);
+    bool remove_target(DWORD pid);
+    void clear_targets();
+    void set_primary_target(DWORD pid);
 
-    // Auto-search for cs2.exe
-    bool auto_detect_game();
+    // Queries
+    bool is_monitored(DWORD pid) const;
+    const std::vector<ProcessMetrics>& get_monitored_targets() const { return monitored_targets_; }
+    const ProcessMetrics* get_primary_target() const;
+    const ProcessMetrics* get_target(DWORD pid) const;
 
-    // Sample telemetry (call periodically, e.g. every 100ms - 500ms)
+    // Periodic telemetry update
     void update();
 
-    // Get current metrics
-    const ProcessMetrics& get_game_metrics() const { return game_metrics_; }
-    const ProcessMetrics& get_aux_metrics() const { return aux_metrics_; }
-
-    DWORD get_game_pid() const { return game_pid_; }
-    DWORD get_aux_pid() const { return aux_pid_; }
+    // Aggregates
+    double get_total_secondary_cpu() const;
+    size_t get_total_secondary_ram() const;
 
 private:
-    void sample_process(DWORD pid, HANDLE hProcess, ProcessMetrics& metrics, uint64_t system_delta_time_100ns);
     HANDLE open_process_safe(DWORD pid);
+    void sample_process(HANDLE hProcess, ProcessMetrics& metrics, uint64_t system_delta_time_100ns);
+    ProcessColor assign_palette_color(size_t index);
 
-    DWORD game_pid_ = 0;
-    DWORD aux_pid_ = 0;
-
-    HANDLE h_game_ = nullptr;
-    HANDLE h_aux_ = nullptr;
-
-    ProcessMetrics game_metrics_;
-    ProcessMetrics aux_metrics_;
+    std::vector<ProcessMetrics> monitored_targets_;
+    std::unordered_map<DWORD, HANDLE> open_handles_;
 
     // Previous system times for CPU % calculation
     FILETIME prev_idle_time_{};

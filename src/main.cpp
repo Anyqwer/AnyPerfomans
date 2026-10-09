@@ -10,7 +10,7 @@
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     anyperf::Dx11Backend backend;
-    if (!backend.init(1320, 840, L"AnyPerfomans - Precision Game & Process Profiler")) {
+    if (!backend.init(1320, 840, L"AnyPerfomans - Multi-Process Performance & Overhead Profiler")) {
         return 1;
     }
 
@@ -18,15 +18,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     anyperf::ThreadProfiler thread_prof;
     anyperf::DashboardView dashboard_view;
 
-    // Try detecting CS2 automatically at startup
-    proc_mon.auto_detect_game();
-
     auto last_telemetry_time = std::chrono::steady_clock::now();
     auto last_thread_time = std::chrono::steady_clock::now();
     auto last_frame_time = std::chrono::steady_clock::now();
 
     anyperf::FrameStats frame_stats{};
-    std::deque<double> recent_frametimes; // rolling window of last 200 frames
+    std::deque<double> recent_frametimes; // Rolling window of last 200 frames
 
     bool running = true;
     while (running) {
@@ -35,7 +32,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             break;
         }
 
-        // Toggle HUD on F11 press
+        // Toggle HUD on F11 hotkey
         if (GetAsyncKeyState(VK_F11) & 1) {
             auto current_mode = backend.get_overlay_mode();
             auto new_mode = (current_mode == anyperf::OverlayMode::Dashboard)
@@ -65,33 +62,32 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
             std::vector<double> sorted_ft(recent_frametimes.begin(), recent_frametimes.end());
             std::sort(sorted_ft.begin(), sorted_ft.end());
-            // 99th percentile frametime is 1% low FPS
             size_t idx_1pct = static_cast<size_t>(sorted_ft.size() * 0.99);
             if (idx_1pct < sorted_ft.size()) {
                 frame_stats.one_percent_low = 1000.0 / sorted_ft[idx_1pct];
             }
         }
 
-        // 2. Sample high-precision process telemetry (every 150ms)
+        // 2. Sample high-precision multi-process telemetry (every 150ms)
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_telemetry_time).count() >= 150) {
             proc_mon.update();
             dashboard_view.push_metrics_sample(
-                proc_mon.get_game_metrics(),
-                proc_mon.get_aux_metrics(),
+                proc_mon.get_monitored_targets(),
                 frame_stats
             );
             last_telemetry_time = now;
         }
 
-        // 3. Sample thread breakdown (every 500ms to keep overhead < 0.1%)
+        // 3. Sample thread breakdown for the active primary process (every 500ms to keep overhead < 0.1%)
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_thread_time).count() >= 500) {
-            if (proc_mon.get_game_pid() != 0) {
-                thread_prof.update(proc_mon.get_game_pid());
+            const auto* primary = proc_mon.get_primary_target();
+            if (primary && primary->pid != 0) {
+                thread_prof.update(primary->pid);
             }
             last_thread_time = now;
         }
 
-        // 4. Render UI
+        // 4. Render UI frame
         backend.begin_frame();
 
         auto current_mode = backend.get_overlay_mode();

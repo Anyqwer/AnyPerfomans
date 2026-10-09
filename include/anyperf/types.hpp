@@ -13,10 +13,22 @@ struct ProcessInfo {
     std::wstring path;
 };
 
+struct ProcessColor {
+    float r = 1.0f;
+    float g = 1.0f;
+    float b = 1.0f;
+    float a = 1.0f;
+};
+
 struct ProcessMetrics {
     DWORD pid = 0;
     std::wstring name;
+    std::string alias;
     bool is_alive = false;
+    bool is_primary = false; // Primary application (e.g. main game or main benchmark target)
+
+    // UI Color coding
+    ProcessColor color{ 0.35f, 0.75f, 1.0f, 1.0f };
 
     // CPU Metrics
     uint64_t last_cycles = 0;
@@ -53,20 +65,24 @@ struct FrameStats {
 
 enum class OverlayMode {
     Dashboard,      // Standalone interactive window with full charts and thread view
-    MiniHud,        // Compact transparent borderless HUD over the game
+    MiniHud,        // Compact transparent borderless HUD over the desktop/game
     Hidden
+};
+
+struct BenchmarkProcessSummary {
+    DWORD pid = 0;
+    std::wstring name;
+    double avg_cpu_percent = 0.0;
+    size_t avg_ram_mb = 0;
 };
 
 struct BenchmarkRecord {
     std::wstring session_name;
     double avg_fps = 0.0;
     double one_percent_low = 0.0;
-    double zero_one_percent_low = 0.0;
     double avg_frametime_ms = 0.0;
-    double avg_game_cpu_percent = 0.0;
-    double avg_aux_cpu_percent = 0.0;
-    size_t avg_aux_ram_mb = 0;
     double duration_seconds = 0.0;
+    std::vector<BenchmarkProcessSummary> process_summaries;
 };
 
 } // namespace anyperf

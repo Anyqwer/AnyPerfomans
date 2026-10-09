@@ -6,6 +6,8 @@
 #include "anyperf/thread_profiler.hpp"
 #include <string>
 #include <vector>
+#include <unordered_map>
+#include <memory>
 
 namespace anyperf {
 
@@ -21,45 +23,44 @@ public:
         OverlayMode& current_mode
     );
 
-    // Feed new telemetry sample into ring buffers
+    // Feed new telemetry sample into ring buffers for all tracked processes
     void push_metrics_sample(
-        const ProcessMetrics& game_metrics,
-        const ProcessMetrics& aux_metrics,
+        const std::vector<ProcessMetrics>& targets,
         const FrameStats& frame_stats
     );
 
 private:
     void render_top_bar(ProcessMonitor& proc_mon, OverlayMode& current_mode);
+    void render_process_tags_bar(ProcessMonitor& proc_mon);
     void render_summary_cards(
-        const ProcessMetrics& game_metrics,
-        const ProcessMetrics& aux_metrics,
+        const ProcessMonitor& proc_mon,
         const FrameStats& frame_stats
     );
-    void render_telemetry_plots();
-    void render_thread_inspector(ThreadProfiler& thread_prof, DWORD target_pid);
+    void render_telemetry_plots(const ProcessMonitor& proc_mon);
+    void render_thread_inspector(
+        ThreadProfiler& thread_prof,
+        const ProcessMonitor& proc_mon
+    );
     void render_benchmark_tab(
-        const ProcessMetrics& game,
-        const ProcessMetrics& aux,
+        const ProcessMonitor& proc_mon,
         const FrameStats& frames
     );
     void render_mini_hud(
-        const ProcessMetrics& game,
-        const ProcessMetrics& aux,
+        const ProcessMonitor& proc_mon,
         const FrameStats& frames,
         OverlayMode& current_mode
     );
 
-    // Buffers for real-time ImPlot curves (last 240 samples = ~12-24 seconds)
+    // Buffers for real-time ImPlot curves
     RingBuffer<float, 300> frametime_history_;
-    RingBuffer<float, 300> game_cpu_history_;
-    RingBuffer<float, 300> aux_cpu_history_;
-    RingBuffer<float, 300> game_ram_history_mb_;
-    RingBuffer<float, 300> aux_ram_history_mb_;
+    
+    // Per-PID timeseries history
+    std::unordered_map<DWORD, std::unique_ptr<RingBuffer<float, 300>>> cpu_histories_;
+    std::unordered_map<DWORD, std::unique_ptr<RingBuffer<float, 300>>> ram_histories_mb_;
 
     std::vector<ProcessInfo> cached_proc_list_;
-    int selected_game_index_ = -1;
-    int selected_aux_index_ = -1;
-    char search_filter_[128] = "";
+    char process_search_query_[128] = "";
+    DWORD selected_inspector_pid_ = 0;
 
     // A/B Benchmark state
     bool is_benchmarking_ = false;
