@@ -66,12 +66,18 @@ void Dx11Backend::load_high_dpi_fonts() {
     cfg.OversampleV = 2;
     cfg.PixelSnapH = true;
 
-    // 3. Complete Latin + Cyrillic glyph ranges
+    // 3. Complete Latin + Cyrillic + Symbol glyph ranges
     static const ImWchar ranges[] = {
         0x0020, 0x00FF, // Basic Latin + Latin Supplement
         0x0400, 0x052F, // Cyrillic + Cyrillic Supplement
         0x2DE0, 0x2DFF, // Cyrillic Extended-A
         0xA640, 0xA69F, // Cyrillic Extended-B
+        0x2000, 0x206F, // General Punctuation
+        0x20A0, 0x20CF, // Currency Symbols
+        0x2100, 0x214F, // Letterlike Symbols (℃, ℉, №)
+        0x2190, 0x21FF, // Arrows
+        0x2200, 0x22FF, // Mathematical Operators
+        0x25A0, 0x25FF, // Geometric Shapes (■, ▲, ▼, etc.)
         0,
     };
 
@@ -82,23 +88,23 @@ void Dx11Backend::load_high_dpi_fonts() {
 
     const char* mono_path = (GetFileAttributesA(cascadia_mono) != INVALID_FILE_ATTRIBUTES) ? cascadia_mono : consolas_mono;
 
-    // Load Segoe UI Regular as primary UI font (16px base scaled by DPI)
+    // Load Segoe UI Regular as primary UI font (15px base scaled by DPI)
     if (GetFileAttributesA(segoe_regular) != INVALID_FILE_ATTRIBUTES) {
-        fonts_.regular = io.Fonts->AddFontFromFileTTF(segoe_regular, 16.0f * dpi, &cfg, ranges);
+        fonts_.regular = io.Fonts->AddFontFromFileTTF(segoe_regular, 15.0f * dpi, &cfg, ranges);
         io.FontDefault = fonts_.regular;
     }
 
     // Load Segoe UI Bold variants
     if (GetFileAttributesA(segoe_bold) != INVALID_FILE_ATTRIBUTES) {
-        fonts_.bold = io.Fonts->AddFontFromFileTTF(segoe_bold, 18.0f * dpi, &cfg, ranges);
-        fonts_.title = io.Fonts->AddFontFromFileTTF(segoe_bold, 22.0f * dpi, &cfg, ranges);
-        fonts_.large_stat = io.Fonts->AddFontFromFileTTF(segoe_bold, 30.0f * dpi, &cfg, ranges);
+        fonts_.bold = io.Fonts->AddFontFromFileTTF(segoe_bold, 16.0f * dpi, &cfg, ranges);
+        fonts_.title = io.Fonts->AddFontFromFileTTF(segoe_bold, 20.0f * dpi, &cfg, ranges);
+        fonts_.large_stat = io.Fonts->AddFontFromFileTTF(segoe_bold, 28.0f * dpi, &cfg, ranges);
     }
 
     // Load Cascadia / Consolas Monospace for RTSS HUD & Code/Telemetry
     if (GetFileAttributesA(mono_path) != INVALID_FILE_ATTRIBUTES) {
-        fonts_.mono = io.Fonts->AddFontFromFileTTF(mono_path, 15.0f * dpi, &cfg, ranges);
-        fonts_.mono_bold = io.Fonts->AddFontFromFileTTF(mono_path, 17.0f * dpi, &cfg, ranges);
+        fonts_.mono = io.Fonts->AddFontFromFileTTF(mono_path, 14.0f * dpi, &cfg, ranges);
+        fonts_.mono_bold = io.Fonts->AddFontFromFileTTF(mono_path, 16.0f * dpi, &cfg, ranges);
     }
 
     // Fallbacks
@@ -115,57 +121,59 @@ void Dx11Backend::setup_modern_imgui_style() {
     ImVec4* colors = style.Colors;
     float s = fonts_.dpi_scale;
 
-    style.WindowRounding    = 10.0f * s;
-    style.ChildRounding     = 8.0f * s;
-    style.FrameRounding     = 6.0f * s;
-    style.PopupRounding     = 8.0f * s;
-    style.ScrollbarRounding = 9.0f * s;
-    style.GrabRounding      = 6.0f * s;
-    style.TabRounding       = 6.0f * s;
+    // GPU-Z ROG crisp geometry: 3-4px subtle rounded corners
+    style.WindowRounding    = 4.0f * s;
+    style.ChildRounding     = 4.0f * s;
+    style.FrameRounding     = 3.0f * s;
+    style.PopupRounding     = 4.0f * s;
+    style.ScrollbarRounding = 4.0f * s;
+    style.GrabRounding      = 3.0f * s;
+    style.TabRounding       = 4.0f * s;
 
-    style.WindowPadding     = ImVec2(16.0f * s, 16.0f * s);
-    style.FramePadding      = ImVec2(10.0f * s, 7.0f * s);
-    style.ItemSpacing       = ImVec2(10.0f * s, 9.0f * s);
-    style.ItemInnerSpacing  = ImVec2(7.0f * s, 6.0f * s);
-    style.IndentSpacing     = 20.0f * s;
-    style.ScrollbarSize     = 14.0f * s;
-    style.GrabMinSize       = 12.0f * s;
+    style.WindowPadding     = ImVec2(12.0f * s, 10.0f * s);
+    style.FramePadding      = ImVec2(8.0f * s, 5.0f * s);
+    style.ItemSpacing       = ImVec2(8.0f * s, 6.0f * s);
+    style.ItemInnerSpacing  = ImVec2(6.0f * s, 4.0f * s);
+    style.IndentSpacing     = 16.0f * s;
+    style.ScrollbarSize     = 12.0f * s;
+    style.GrabMinSize       = 10.0f * s;
 
-    // ASUS ROG Red & Black + Liquid Glass Palette
+    // TechPowerUp GPU-Z Republic of Gamers Palette:
+    // Pure Obsidian Black, Recessed Charcoal Frames, Vibrant Cyan/Teal Data Labels, Glossy Crimson Accents
     colors[ImGuiCol_Text]                  = ImVec4(0.96f, 0.96f, 0.98f, 1.00f);
-    colors[ImGuiCol_TextDisabled]          = ImVec4(0.55f, 0.58f, 0.65f, 1.00f);
-    colors[ImGuiCol_WindowBg]              = ImVec4(0.06f, 0.07f, 0.09f, 0.98f); // Obsidian Deep Black
-    colors[ImGuiCol_ChildBg]               = ImVec4(0.09f, 0.10f, 0.14f, 0.82f); // Dark Liquid Glass
-    colors[ImGuiCol_PopupBg]               = ImVec4(0.08f, 0.09f, 0.12f, 0.98f);
-    colors[ImGuiCol_Border]                = ImVec4(0.85f, 0.18f, 0.25f, 0.35f); // Subtle Crimson Edge Glow
+    colors[ImGuiCol_TextDisabled]          = ImVec4(0.50f, 0.55f, 0.62f, 1.00f);
+    colors[ImGuiCol_WindowBg]              = ImVec4(0.05f, 0.05f, 0.07f, 0.99f); // Obsidian Carbon
+    colors[ImGuiCol_ChildBg]               = ImVec4(0.08f, 0.09f, 0.12f, 0.92f); // Dark Recessed Glass
+    colors[ImGuiCol_PopupBg]               = ImVec4(0.07f, 0.08f, 0.10f, 0.98f);
+    colors[ImGuiCol_Border]                = ImVec4(0.65f, 0.12f, 0.18f, 0.45f); // Crimson Edge Frame
     colors[ImGuiCol_BorderShadow]          = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
-    colors[ImGuiCol_FrameBg]               = ImVec4(0.12f, 0.14f, 0.19f, 0.85f);
-    colors[ImGuiCol_FrameBgHovered]        = ImVec4(0.24f, 0.14f, 0.18f, 0.85f);
-    colors[ImGuiCol_FrameBgActive]         = ImVec4(0.32f, 0.16f, 0.22f, 0.90f);
-    colors[ImGuiCol_TitleBg]               = ImVec4(0.06f, 0.07f, 0.09f, 1.00f);
-    colors[ImGuiCol_TitleBgActive]         = ImVec4(0.14f, 0.08f, 0.10f, 1.00f);
-    colors[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.06f, 0.07f, 0.09f, 0.75f);
-    colors[ImGuiCol_MenuBarBg]             = ImVec4(0.09f, 0.10f, 0.13f, 1.00f);
-    colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.06f, 0.07f, 0.09f, 0.60f);
-    colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.35f, 0.15f, 0.20f, 0.80f);
-    colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.55f, 0.18f, 0.25f, 0.90f);
-    colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.80f, 0.18f, 0.25f, 1.00f);
-    colors[ImGuiCol_CheckMark]             = ImVec4(1.00f, 0.22f, 0.32f, 1.00f); // ROG Crimson
-    colors[ImGuiCol_SliderGrab]            = ImVec4(0.92f, 0.20f, 0.28f, 0.90f);
-    colors[ImGuiCol_SliderGrabActive]      = ImVec4(1.00f, 0.30f, 0.38f, 1.00f);
-    colors[ImGuiCol_Button]                = ImVec4(0.70f, 0.14f, 0.22f, 0.80f); // Crimson Glass Button
-    colors[ImGuiCol_ButtonHovered]         = ImVec4(0.92f, 0.20f, 0.30f, 0.90f);
-    colors[ImGuiCol_ButtonActive]          = ImVec4(0.55f, 0.10f, 0.16f, 1.00f);
-    colors[ImGuiCol_Header]                = ImVec4(0.40f, 0.12f, 0.18f, 0.70f);
-    colors[ImGuiCol_HeaderHovered]         = ImVec4(0.60f, 0.16f, 0.24f, 0.80f);
-    colors[ImGuiCol_HeaderActive]          = ImVec4(0.75f, 0.18f, 0.28f, 0.90f);
-    colors[ImGuiCol_Separator]             = ImVec4(0.45f, 0.15f, 0.20f, 0.40f);
-    colors[ImGuiCol_Tab]                   = ImVec4(0.12f, 0.14f, 0.18f, 0.80f);
-    colors[ImGuiCol_TabHovered]            = ImVec4(0.45f, 0.15f, 0.22f, 0.80f);
-    colors[ImGuiCol_TabActive]             = ImVec4(0.75f, 0.15f, 0.22f, 0.95f);
-    colors[ImGuiCol_PlotLines]             = ImVec4(1.00f, 0.24f, 0.32f, 1.00f); // Red Glow Lines
-    colors[ImGuiCol_PlotLinesHovered]      = ImVec4(1.00f, 0.50f, 0.40f, 1.00f);
-    colors[ImGuiCol_PlotHistogram]         = ImVec4(1.00f, 0.30f, 0.38f, 1.00f);
+    colors[ImGuiCol_FrameBg]               = ImVec4(0.10f, 0.11f, 0.15f, 0.95f); // Dark Input Frame
+    colors[ImGuiCol_FrameBgHovered]        = ImVec4(0.18f, 0.12f, 0.16f, 0.95f);
+    colors[ImGuiCol_FrameBgActive]         = ImVec4(0.25f, 0.12f, 0.18f, 0.95f);
+    colors[ImGuiCol_TitleBg]               = ImVec4(0.05f, 0.05f, 0.07f, 1.00f);
+    colors[ImGuiCol_TitleBgActive]         = ImVec4(0.12f, 0.06f, 0.08f, 1.00f);
+    colors[ImGuiCol_TitleBgCollapsed]      = ImVec4(0.05f, 0.05f, 0.07f, 0.75f);
+    colors[ImGuiCol_MenuBarBg]             = ImVec4(0.08f, 0.09f, 0.11f, 1.00f);
+    colors[ImGuiCol_ScrollbarBg]           = ImVec4(0.05f, 0.05f, 0.07f, 0.60f);
+    colors[ImGuiCol_ScrollbarGrab]         = ImVec4(0.35f, 0.12f, 0.18f, 0.80f);
+    colors[ImGuiCol_ScrollbarGrabHovered]  = ImVec4(0.55f, 0.16f, 0.22f, 0.90f);
+    colors[ImGuiCol_ScrollbarGrabActive]   = ImVec4(0.75f, 0.18f, 0.25f, 1.00f);
+    colors[ImGuiCol_CheckMark]             = ImVec4(0.00f, 0.90f, 0.95f, 1.00f); // Bright Cyan / Aqua
+    colors[ImGuiCol_SliderGrab]            = ImVec4(0.85f, 0.15f, 0.22f, 0.95f); // ROG Crimson
+    colors[ImGuiCol_SliderGrabActive]      = ImVec4(1.00f, 0.25f, 0.32f, 1.00f);
+    colors[ImGuiCol_Button]                = ImVec4(0.65f, 0.10f, 0.16f, 0.90f); // Glossy Red Button (Like GPU-Z Lookup/Close)
+    colors[ImGuiCol_ButtonHovered]         = ImVec4(0.85f, 0.16f, 0.24f, 1.00f);
+    colors[ImGuiCol_ButtonActive]          = ImVec4(0.50f, 0.08f, 0.12f, 1.00f);
+    colors[ImGuiCol_Header]                = ImVec4(0.35f, 0.09f, 0.14f, 0.85f);
+    colors[ImGuiCol_HeaderHovered]         = ImVec4(0.55f, 0.12f, 0.18f, 0.90f);
+    colors[ImGuiCol_HeaderActive]          = ImVec4(0.70f, 0.14f, 0.22f, 1.00f);
+    colors[ImGuiCol_Separator]             = ImVec4(0.40f, 0.12f, 0.16f, 0.50f);
+    colors[ImGuiCol_Tab]                   = ImVec4(0.10f, 0.11f, 0.15f, 0.90f);
+    colors[ImGuiCol_TabHovered]            = ImVec4(0.40f, 0.12f, 0.18f, 0.90f);
+    colors[ImGuiCol_TabActive]             = ImVec4(0.75f, 0.12f, 0.18f, 0.95f); // Red active tab
+    colors[ImGuiCol_PlotLines]             = ImVec4(0.00f, 0.90f, 0.95f, 1.00f); // Vibrant Aqua Line
+    colors[ImGuiCol_PlotLinesHovered]      = ImVec4(1.00f, 0.35f, 0.45f, 1.00f);
+    colors[ImGuiCol_PlotHistogram]         = ImVec4(0.85f, 0.15f, 0.22f, 1.00f);
 }
 
 bool Dx11Backend::init(int width, int height, const std::wstring& title) {

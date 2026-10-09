@@ -244,6 +244,18 @@ void ProcessMonitor::sample_process(HANDLE hProcess, ProcessMetrics& metrics, ui
         }
         prev_proc_cycles_[pid] = cycles;
         metrics.last_cycles = cycles;
+
+        // If GetProcessTimes missed a sub-15.6ms burst (common with cmd.exe or CLI commands),
+        // calculate microsecond-level CPU load from hardware cycle deltas:
+        if (metrics.cpu_percent == 0.0 && metrics.cycle_delta > 5000 && system_delta_time_100ns > 0) {
+            double delta_sec = static_cast<double>(system_delta_time_100ns) / 10000000.0;
+            if (delta_sec > 0.001) {
+                double est_cpu = (static_cast<double>(metrics.cycle_delta) / (3.5e9 * delta_sec)) * 100.0;
+                if (est_cpu > 0.02) {
+                    metrics.cpu_percent = (est_cpu > 100.0) ? 100.0 : est_cpu;
+                }
+            }
+        }
     }
 
     // 3. Memory Metrics (PSAPI)

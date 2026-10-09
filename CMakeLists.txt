@@ -85,8 +85,10 @@ target_link_libraries(AnyPerfomans PRIVATE
     psapi
     ntdll
     advapi32
+    pdh
 )
 
 set_target_properties(AnyPerfomans PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
+
