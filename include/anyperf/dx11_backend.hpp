@@ -26,7 +26,7 @@ public:
     Dx11Backend();
     ~Dx11Backend();
 
-    bool init(int width = 1320, int height = 840, const std::wstring& title = L"AnyPerfomans - ROG Liquid Glass Edition");
+    bool init(int width = 1320, int height = 840, const std::wstring& title = L"AnyPerfomans - Liquid Glass Edition");
     void shutdown();
 
     bool process_messages();

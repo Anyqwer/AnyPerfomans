@@ -76,6 +76,7 @@ set(CORE_SOURCES
     src/core/rtss_bridge.cpp
     src/core/thread_profiler.cpp
     src/core/tray_manager.cpp
+    src/core/hardware_controller.cpp
     src/render/dx11_backend.cpp
     src/ui/dashboard_view.cpp
 )

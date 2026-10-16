@@ -99,6 +99,7 @@ private:
 
     // Cached DXGI factory to avoid expensive re-creation every update
     IDXGIFactory1* cached_dxgi_factory_ = nullptr;
+    bool has_hw_hotspot_ = false;
 };
 
 } // namespace anyperf

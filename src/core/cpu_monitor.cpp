@@ -21,12 +21,16 @@ CpuMonitor::CpuMonitor() {
         );
     }
 
-    init_wmi();
+    worker_running_ = true;
+    wmi_worker_ = std::thread(&CpuMonitor::wmi_worker_loop, this);
     update();
 }
 
 CpuMonitor::~CpuMonitor() {
-    cleanup_wmi();
+    worker_running_ = false;
+    if (wmi_worker_.joinable()) {
+        wmi_worker_.join();
+    }
 }
 
 void CpuMonitor::init_cpu_info() {
@@ -108,91 +112,85 @@ void CpuMonitor::update_per_core_usage() {
     prev_core_perf_ = current_perf;
 }
 
-bool CpuMonitor::init_wmi() {
+void CpuMonitor::wmi_worker_loop() {
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     (void)hr;
 
     IWbemLocator* pLoc = nullptr;
     hr = CoCreateInstance(CLSID_WbemLocator, nullptr, CLSCTX_INPROC_SERVER, IID_IWbemLocator, reinterpret_cast<LPVOID*>(&pLoc));
-    if (FAILED(hr) || !pLoc) return false;
+    if (FAILED(hr) || !pLoc) {
+        CoUninitialize();
+        return;
+    }
 
     IWbemServices* pSvc = nullptr;
     hr = pLoc->ConnectServer(_bstr_t(L"ROOT\\WMI"), nullptr, nullptr, nullptr, 0, nullptr, nullptr, &pSvc);
     if (FAILED(hr) || !pSvc) {
         pLoc->Release();
-        return false;
+        CoUninitialize();
+        return;
     }
 
     CoSetProxyBlanket(pSvc, RPC_C_AUTHN_WINNT, RPC_C_AUTHZ_NONE, nullptr, RPC_C_AUTHN_LEVEL_CALL, RPC_C_IMP_LEVEL_IMPERSONATE, nullptr, EOAC_NONE);
 
-    wmi_locator_ = pLoc;
-    wmi_services_ = pSvc;
-    wmi_initialized_ = true;
-    return true;
-}
+    while (worker_running_) {
+        IEnumWbemClassObject* pEnumerator = nullptr;
+        hr = pSvc->ExecQuery(
+            bstr_t("WQL"),
+            bstr_t("SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"),
+            WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
+            nullptr,
+            &pEnumerator
+        );
 
-void CpuMonitor::query_wmi_temperature() {
-    if (!wmi_initialized_ || !wmi_services_) return;
+        if (SUCCEEDED(hr) && pEnumerator) {
+            IWbemClassObject* pclsObj = nullptr;
+            ULONG uReturned = 0;
+            int max_temp_c = 0;
 
-    auto* pSvc = reinterpret_cast<IWbemServices*>(wmi_services_);
-    IEnumWbemClassObject* pEnumerator = nullptr;
+            while (pEnumerator) {
+                hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturned);
+                if (uReturned == 0 || !pclsObj) break;
 
-    HRESULT hr = pSvc->ExecQuery(
-        bstr_t("WQL"),
-        bstr_t("SELECT CurrentTemperature FROM MSAcpi_ThermalZoneTemperature"),
-        WBEM_FLAG_FORWARD_ONLY | WBEM_FLAG_RETURN_IMMEDIATELY,
-        nullptr,
-        &pEnumerator
-    );
-
-    if (FAILED(hr) || !pEnumerator) return;
-
-    IWbemClassObject* pclsObj = nullptr;
-    ULONG uReturned = 0;
-    int max_temp_c = 0;
-
-    while (pEnumerator) {
-        hr = pEnumerator->Next(WBEM_INFINITE, 1, &pclsObj, &uReturned);
-        if (uReturned == 0 || !pclsObj) break;
-
-        VARIANT vtProp;
-        VariantInit(&vtProp);
-        hr = pclsObj->Get(L"CurrentTemperature", 0, &vtProp, nullptr, nullptr);
-        if (SUCCEEDED(hr) && (vtProp.vt == VT_I4 || vtProp.vt == VT_UI4)) {
-            long rawKelvinTenths = vtProp.lVal;
-            // Convert tenths of Kelvin to Celsius: (K / 10) - 273.15
-            int celsius = static_cast<int>(std::round((rawKelvinTenths / 10.0) - 273.15));
-            if (celsius > 10 && celsius < 115) {
-                if (celsius > max_temp_c) {
-                    max_temp_c = celsius;
+                VARIANT vtProp;
+                VariantInit(&vtProp);
+                hr = pclsObj->Get(L"CurrentTemperature", 0, &vtProp, nullptr, nullptr);
+                if (SUCCEEDED(hr) && (vtProp.vt == VT_I4 || vtProp.vt == VT_UI4)) {
+                    long rawKelvinTenths = vtProp.lVal;
+                    // Convert tenths of Kelvin to Celsius: (K / 10) - 273.15
+                    int celsius = static_cast<int>(std::round((rawKelvinTenths / 10.0) - 273.15));
+                    if (celsius > 10 && celsius < 115) {
+                        if (celsius > max_temp_c) {
+                            max_temp_c = celsius;
+                        }
+                    }
                 }
+                VariantClear(&vtProp);
+                pclsObj->Release();
+            }
+            pEnumerator->Release();
+
+            if (max_temp_c > 0) {
+                cached_temp_c_.store(max_temp_c);
             }
         }
-        VariantClear(&vtProp);
-        pclsObj->Release();
+
+        // Sleep 1500ms in 50ms slices to allow responsive shutdown
+        for (int i = 0; i < 30 && worker_running_; ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
     }
 
-    pEnumerator->Release();
-
-    if (max_temp_c > 0) {
-        metrics_.package_temp_c = max_temp_c;
-    }
-}
-
-void CpuMonitor::cleanup_wmi() {
-    if (wmi_services_) {
-        reinterpret_cast<IWbemServices*>(wmi_services_)->Release();
-        wmi_services_ = nullptr;
-    }
-    if (wmi_locator_) {
-        reinterpret_cast<IWbemLocator*>(wmi_locator_)->Release();
-        wmi_locator_ = nullptr;
-    }
-    wmi_initialized_ = false;
+    pSvc->Release();
+    pLoc->Release();
+    CoUninitialize();
 }
 
 void CpuMonitor::update_thermal_and_power() {
-    query_wmi_temperature();
+    int t = cached_temp_c_.load();
+    if (t > 0) {
+        metrics_.package_temp_c = t;
+    }
 
     // Estimate live CPU package power (Watts) based on load and core count if direct MSR is unavailable
     // Typical modern desktop x64 CPU: 15W idle, up to 65W - 125W load

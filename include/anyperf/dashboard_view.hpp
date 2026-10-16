@@ -17,6 +17,7 @@ namespace anyperf {
 class EtwTracker;
 class Dx11Backend;
 class RTSSBridge;
+class HardwareController;
 struct AppFonts;
 
 class DashboardView {
@@ -30,6 +31,7 @@ public:
         EtwTracker& etw_tracker,
         GpuMonitor& gpu_mon,
         CpuMonitor& cpu_mon,
+        HardwareController& hw_ctrl,
         ConfigManager& config_mgr,
         RTSSBridge& rtss_bridge,
         Dx11Backend& backend,
@@ -59,7 +61,7 @@ private:
         const AppFonts& fonts,
         OverlayMode& current_mode
     );
-    void render_navigation_bar(const AppFonts& fonts);
+    void render_navigation_bar(ConfigManager& config_mgr, const AppFonts& fonts);
     void render_process_tags_bar(ProcessMonitor& proc_mon, const AppFonts& fonts);
     void render_summary_cards(
         const ProcessMonitor& proc_mon,
@@ -77,6 +79,18 @@ private:
     void render_thread_inspector(
         ThreadProfiler& thread_prof,
         const ProcessMonitor& proc_mon,
+        const AppFonts& fonts
+    );
+    void render_fan_control_tab(
+        HardwareController& hw_ctrl,
+        ConfigManager& config_mgr,
+        const GpuMetrics& gpu,
+        const AppFonts& fonts
+    );
+    void render_overclock_tab(
+        HardwareController& hw_ctrl,
+        ConfigManager& config_mgr,
+        const GpuMetrics& gpu,
         const AppFonts& fonts
     );
     void render_benchmark_tab(

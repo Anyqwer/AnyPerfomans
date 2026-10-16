@@ -32,6 +32,9 @@ public:
     // Prevent RTSS from hooking into AnyPerfomans
     static bool install_exclusion_profile();
 
+    // Built-in RTSS Hardware Framerate Limiter (0 = uncapped)
+    static bool set_framerate_limit(int fps_limit);
+
     bool was_launched_by_us() const { return launched_by_us_; }
     void set_launched_by_us(bool v) { launched_by_us_ = v; }
 

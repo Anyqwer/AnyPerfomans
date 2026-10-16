@@ -149,24 +149,28 @@ void GpuMonitor::update_nvml() {
         }
     }
 
-    // Extended Sensor queries via NVML Field Values (Field ID 82 = Memory Temperature)
+    // Extended Sensor queries via NVML Field Values (Field ID 82 = Memory Temp, 83 = Hotspot Temp)
     if (nvmlDeviceGetFieldValues_) {
-        NvmlFieldValue fields[2]{};
+        NvmlFieldValue fields[3]{};
         fields[0].fieldId = 82; // NVML_FI_DEV_MEMORY_TEMP
         fields[1].fieldId = 81; // NVML_FI_DEV_GPU_TEMP
-        if (nvmlDeviceGetFieldValues_(nvml_device_, 2, fields) == 0) {
+        fields[2].fieldId = 83; // NVML_FI_DEV_GPU_HOTSPOT_TEMP
+        if (nvmlDeviceGetFieldValues_(nvml_device_, 3, fields) == 0) {
             if (fields[0].nvmlSt == 0 && fields[0].value.sllVal > 0 && fields[0].value.sllVal < 150) {
                 metrics_.vram_temp_c = static_cast<int>(fields[0].value.sllVal);
+            }
+            if (fields[2].nvmlSt == 0 && fields[2].value.sllVal > 0 && fields[2].value.sllVal < 150) {
+                metrics_.hotspot_temp_c = static_cast<int>(fields[2].value.sllVal);
+                has_hw_hotspot_ = true;
             }
         }
     }
 
-    // Hotspot temperature: on modern NVIDIA cards under load, junction hotspot typically runs ~10-14C hotter than edge
-    if (metrics_.temperature_c > 0) {
-        if (metrics_.hotspot_temp_c == 0) {
-            int delta = (metrics_.core_usage_percent > 10) ? static_cast<int>(std::round(12.0 * (metrics_.core_usage_percent / 100.0))) : 4;
-            metrics_.hotspot_temp_c = metrics_.temperature_c + delta;
-        }
+    // Hotspot temperature: on NVIDIA cards without dedicated HW hotspot sensor,
+    // recalculate junction temperature dynamically every tick based on live core load
+    if (!has_hw_hotspot_ && metrics_.temperature_c > 0) {
+        int delta = (metrics_.core_usage_percent > 10) ? static_cast<int>(std::round(12.0 * (metrics_.core_usage_percent / 100.0))) : 4;
+        metrics_.hotspot_temp_c = metrics_.temperature_c + delta;
     }
 
     if (nvmlDeviceGetMemoryInfo_) {
@@ -303,6 +307,7 @@ void GpuMonitor::update_adl() {
         tempVal = 0;
         if (pTemp(adl_context_, 0, 3, &tempVal) == 0 && tempVal > 0) {
             metrics_.hotspot_temp_c = tempVal / 1000;
+            has_hw_hotspot_ = true;
         }
     }
 }

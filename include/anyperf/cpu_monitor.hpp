@@ -4,6 +4,8 @@
 #include <vector>
 #include <cstdint>
 #include <string>
+#include <atomic>
+#include <thread>
 
 namespace anyperf {
 
@@ -59,13 +61,11 @@ private:
     std::vector<SYSTEM_PROCESSOR_PERFORMANCE_INFORMATION> prev_core_perf_;
     bool has_initial_sample_ = false;
 
-    // Thermal queries
-    bool wmi_initialized_ = false;
-    void* wmi_services_ = nullptr;
-    void* wmi_locator_ = nullptr;
-    bool init_wmi();
-    void query_wmi_temperature();
-    void cleanup_wmi();
+    // Asynchronous Thermal queries via background thread
+    void wmi_worker_loop();
+    std::atomic<bool> worker_running_{false};
+    std::atomic<int> cached_temp_c_{0};
+    std::thread wmi_worker_;
 };
 
 } // namespace anyperf

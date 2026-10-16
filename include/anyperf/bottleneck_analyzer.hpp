@@ -30,7 +30,8 @@ inline BottleneckInfo detect_bottleneck(
     const CpuMetrics& cpu,
     double current_fps,
     size_t ram_used,
-    size_t ram_total
+    size_t ram_total,
+    double frametime_ms = 0.0
 ) {
     BottleneckInfo info;
 
@@ -91,6 +92,20 @@ inline BottleneckInfo detect_bottleneck(
         info.description = "CPU Multi-Core Bound (" + std::to_string(static_cast<int>(cpu.total_usage_percent)) + "%)";
         info.short_badge = "CPU ALL";
         return info;
+    }
+
+    // 6. FPS Capped / V-Sync Check (Neither GPU nor CPU saturated, rock-steady framerate)
+    if (gpu.core_usage_percent < 85 && cpu.max_core_usage < 80.0 && current_fps >= 25.0) {
+        int round_fps = static_cast<int>(std::round(current_fps));
+        bool common_cap = (round_fps == 30 || round_fps == 60 || round_fps == 75 || round_fps == 90 || 
+                           round_fps == 120 || round_fps == 144 || round_fps == 165 || round_fps == 240);
+        if (common_cap || (frametime_ms > 0.0 && std::abs((1000.0 / frametime_ms) - current_fps) < 0.8)) {
+            info.type = BottleneckType::FpsCapped;
+            info.limit_percentage = current_fps;
+            info.description = "FPS Capped (" + std::to_string(round_fps) + " FPS)";
+            info.short_badge = "CAP " + std::to_string(round_fps);
+            return info;
+        }
     }
 
     return info;

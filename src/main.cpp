@@ -8,6 +8,7 @@
 #include "anyperf/config_manager.hpp"
 #include "anyperf/dashboard_view.hpp"
 #include "anyperf/rtss_bridge.hpp"
+#include "anyperf/hardware_controller.hpp"
 #include <chrono>
 #include <thread>
 #include <deque>
@@ -25,7 +26,7 @@ extern "C" {
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     anyperf::ConfigManager config_mgr;
     anyperf::Dx11Backend backend;
-    if (!backend.init(1320, 840, L"AnyPerfomans - ROG Liquid Glass Edition")) {
+    if (!backend.init(1320, 840, L"AnyPerfomans - Liquid Glass Edition")) {
         return 1;
     }
 
@@ -33,10 +34,23 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     anyperf::ThreadProfiler thread_prof;
     anyperf::GpuMonitor gpu_mon;
     anyperf::CpuMonitor cpu_mon;
+    anyperf::HardwareController hw_ctrl;
+    hw_ctrl.init();
+
     anyperf::TrayManager tray_manager;
     anyperf::EtwTracker etw_tracker;
     anyperf::DashboardView dashboard_view;
     anyperf::RTSSBridge rtss_bridge;
+
+    // Apply Overclock at startup if enabled in active profile
+    if (config_mgr.get_oc().enabled && config_mgr.get_oc().apply_at_startup) {
+        hw_ctrl.apply_overclock(config_mgr.get_oc());
+    }
+
+    // Apply RTSS framerate limit if configured
+    if (config_mgr.get_framerate_limit() > 0) {
+        anyperf::RTSSBridge::set_framerate_limit(config_mgr.get_framerate_limit());
+    }
 
     // Initialize System Tray Integration
     tray_manager.init(backend.get_hwnd());
@@ -55,6 +69,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     auto last_telemetry_time = std::chrono::steady_clock::now();
     auto last_gpu_time = std::chrono::steady_clock::now();
     auto last_cpu_time = std::chrono::steady_clock::now();
+    auto last_fan_time = std::chrono::steady_clock::now();
     auto last_tray_time = std::chrono::steady_clock::now();
     auto last_thread_time = std::chrono::steady_clock::now();
     auto last_rtss_time = std::chrono::steady_clock::now();
@@ -187,35 +202,43 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             last_tray_time = now;
         }
 
-        // 9. Render UI frame
-        backend.begin_frame();
-
-        auto current_mode = backend.get_overlay_mode();
-        dashboard_view.render(
-            proc_mon,
-            thread_prof,
-            etw_tracker,
-            gpu_mon,
-            cpu_mon,
-            config_mgr,
-            rtss_bridge,
-            backend,
-            display_frame_stats,
-            current_mode
-        );
-
-        if (current_mode != backend.get_overlay_mode()) {
-            backend.set_overlay_mode(current_mode);
+        // 8.5. Evaluate Hardware Fan Curve (every 500ms)
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fan_time).count() >= 500) {
+            hw_ctrl.update_fan_curve(config_mgr.get_fan(), gpu_mon.get_metrics().temperature_c);
+            last_fan_time = now;
         }
 
-        backend.end_frame();
-
+        // 9. Render UI frame (Skipped completely when minimized to tray to achieve 0.0% CPU and 0 MB GPU overhead)
+        auto current_mode = backend.get_overlay_mode();
         if (current_mode == anyperf::OverlayMode::Hidden) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        } else {
+            backend.begin_frame();
+
+            dashboard_view.render(
+                proc_mon,
+                thread_prof,
+                etw_tracker,
+                gpu_mon,
+                cpu_mon,
+                hw_ctrl,
+                config_mgr,
+                rtss_bridge,
+                backend,
+                display_frame_stats,
+                current_mode
+            );
+
+            if (current_mode != backend.get_overlay_mode()) {
+                backend.set_overlay_mode(current_mode);
+            }
+
+            backend.end_frame();
         }
     }
 
     // Graceful cleanup on shutdown
+    hw_ctrl.shutdown();
     tray_manager.shutdown();
     rtss_bridge.clear_osd();
     rtss_bridge.disconnect();

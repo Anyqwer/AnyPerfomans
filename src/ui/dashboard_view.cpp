@@ -5,6 +5,7 @@
 #include "anyperf/rtss_bridge.hpp"
 #include "anyperf/bottleneck_analyzer.hpp"
 #include "anyperf/tray_manager.hpp"
+#include "anyperf/hardware_controller.hpp"
 #include <imgui.h>
 #include <implot.h>
 #include <sstream>
@@ -91,6 +92,7 @@ void DashboardView::render(
     EtwTracker& etw_tracker,
     GpuMonitor& gpu_mon,
     CpuMonitor& cpu_mon,
+    HardwareController& hw_ctrl,
     ConfigManager& config_mgr,
     RTSSBridge& rtss_bridge,
     Dx11Backend& backend,
@@ -113,23 +115,23 @@ void DashboardView::render(
         ImGuiWindowFlags_NoCollapse
     );
 
-    // 1. Header with branding & status badges (GPU-Z ROG Style)
+    // 1. Header with branding & status badges (Liquid Glass Style)
     render_header_bar(proc_mon, etw_tracker, gpu_mon, fonts, current_mode);
 
-    // 2. High-Tech Segmented Navigation Bar
-    render_navigation_bar(fonts);
+    // 2. High-Tech Segmented Navigation Bar with 5 Profiles
+    render_navigation_bar(config_mgr, fonts);
 
     // 3. Process Chip Management Bar
     render_process_tags_bar(proc_mon, fonts);
 
     ImGui::Spacing();
 
-    // 4. GPU-Z ROG Telemetry Cards (No Scrollbars, Guaranteed Fit)
+    // 4. Liquid Glass Telemetry Cards
     render_summary_cards(proc_mon, etw_tracker, gpu_mon.get_metrics(), cpu_mon.get_metrics(), frame_stats, fonts);
 
     ImGui::Spacing();
 
-    // 5. Active Tab View
+    // 5. Active Tab View (6 Complete Modules)
     switch (active_tab_index_) {
         case 0:
             render_telemetry_plots(proc_mon, gpu_mon.get_metrics(), fonts);
@@ -138,9 +140,15 @@ void DashboardView::render(
             render_thread_inspector(thread_prof, proc_mon, fonts);
             break;
         case 2:
-            render_benchmark_tab(proc_mon, gpu_mon.get_metrics(), frame_stats, fonts);
+            render_fan_control_tab(hw_ctrl, config_mgr, gpu_mon.get_metrics(), fonts);
             break;
         case 3:
+            render_overclock_tab(hw_ctrl, config_mgr, gpu_mon.get_metrics(), fonts);
+            break;
+        case 4:
+            render_benchmark_tab(proc_mon, gpu_mon.get_metrics(), frame_stats, fonts);
+            break;
+        case 5:
             render_settings_tab(config_mgr, rtss_bridge, fonts);
             break;
     }
@@ -157,22 +165,22 @@ void DashboardView::render_header_bar(
 ) {
     float s = fonts.dpi_scale;
 
-    // ASUS Republic of Gamers Branding
-    ImGui::PushFont(fonts.bold);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.15f, 0.22f, 1.0f));
-    ImGui::Text("REPUBLIC OF GAMERS");
-    ImGui::PopStyleColor();
-    ImGui::PopFont();
-
-    ImGui::SameLine();
+    // Liquid Glass Edition Branding
     ImGui::PushFont(fonts.title);
     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 1.00f, 1.00f, 1.0f));
-    ImGui::Text("ANYPERFOMANS 2.0");
+    ImGui::Text("ANYPERFOMANS");
     ImGui::PopStyleColor();
     ImGui::PopFont();
 
     ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 0.8f), "| Hardware Profiler");
+    ImGui::PushFont(fonts.bold);
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.90f, 1.00f, 1.0f));
+    ImGui::Text("LIQUID GLASS");
+    ImGui::PopStyleColor();
+    ImGui::PopFont();
+
+    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.50f, 0.55f, 0.65f, 0.9f), "| Hardware & Telemetry Suite");
 
     // Right-aligned status badges
     float badges_width = 460.0f * s;
@@ -228,32 +236,35 @@ void DashboardView::render_header_bar(
     ImGui::Spacing();
 }
 
-void DashboardView::render_navigation_bar(const AppFonts& fonts) {
+void DashboardView::render_navigation_bar(ConfigManager& config_mgr, const AppFonts& fonts) {
     const char* tabs[] = {
-        "TELEMETRY & PLOTS",
-        "THREAD INSPECTOR",
-        "IMPACT BENCHMARK",
-        "HUD & SETTINGS"
+        "TELEMETRY",
+        "THREADS",
+        "FAN CONTROL",
+        "TUNING & OC",
+        "BENCHMARK",
+        "MONITORING & OSD"
     };
 
-    float tab_width = 190.0f * fonts.dpi_scale;
-    float tab_height = 32.0f * fonts.dpi_scale;
+    float s = fonts.dpi_scale;
+    float tab_width = 138.0f * s;
+    float tab_height = 30.0f * s;
 
     ImGui::PushFont(fonts.bold);
 
-    for (int i = 0; i < 4; ++i) {
+    for (int i = 0; i < 6; ++i) {
         bool is_active = (active_tab_index_ == i);
 
         if (is_active) {
-            // GPU-Z ROG Active Tab: Rich Crimson Red with Crisp White Text
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f, 0.12f, 0.18f, 0.95f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.88f, 0.18f, 0.25f, 1.0f));
+            // Liquid Glass Active Tab: Crisp Cyan / Teal Glow with Crisp White Text
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.55f, 0.70f, 0.95f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.70f, 0.85f, 1.0f));
             ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
         } else {
-            // Inactive Tab: Recessed Charcoal Frame with Cyan Tint
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.09f, 0.10f, 0.14f, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.14f, 0.18f, 0.90f));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.82f, 0.90f, 0.85f));
+            // Inactive Tab: Recessed Carbon Charcoal
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.09f, 0.12f, 0.85f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.16f, 0.22f, 0.90f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.85f, 0.95f, 0.85f));
         }
 
         if (ImGui::Button(tabs[i], ImVec2(tab_width, tab_height))) {
@@ -261,8 +272,42 @@ void DashboardView::render_navigation_bar(const AppFonts& fonts) {
         }
 
         ImGui::PopStyleColor(3);
+        ImGui::SameLine(0, 5.0f * s);
+    }
 
-        if (i < 3) ImGui::SameLine(0, 6.0f * fonts.dpi_scale);
+    // 5 Profile Slots Quick Selector on the Right Side
+    float avail_w = ImGui::GetContentRegionAvail().x;
+    float profile_btn_w = 34.0f * s;
+    float total_profile_w = (profile_btn_w + 4.0f * s) * 5 + 75.0f * s;
+    if (avail_w > total_profile_w) {
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - total_profile_w));
+    }
+
+    ImGui::TextColored(ImVec4(0.6f, 0.65f, 0.75f, 1.0f), "PROFILE:");
+    ImGui::SameLine(0, 6.0f * s);
+
+    int cur_profile = config_mgr.get_active_profile_index();
+    for (int p = 0; p < ConfigManager::NUM_PROFILES; ++p) {
+        bool is_p_active = (cur_profile == p);
+        if (is_p_active) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.80f, 0.50f, 0.95f)); // Neon Emerald
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.05f, 0.10f, 0.08f, 1.0f));
+        } else {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.14f, 0.18f, 0.85f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.75f, 0.85f, 1.0f));
+        }
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.90f, 0.60f, 1.0f));
+
+        std::string p_label = std::to_string(p + 1);
+        if (ImGui::Button(p_label.c_str(), ImVec2(profile_btn_w, tab_height))) {
+            config_mgr.switch_profile(p);
+            config_mgr.save_to_file();
+        }
+
+        ImGui::PopStyleColor(3);
+        if (p < ConfigManager::NUM_PROFILES - 1) {
+            ImGui::SameLine(0, 4.0f * s);
+        }
     }
 
     ImGui::PopFont();
@@ -814,6 +859,269 @@ void DashboardView::toggle_benchmark(const ProcessMonitor& proc_mon, const GpuMe
     }
 }
 
+void DashboardView::render_fan_control_tab(
+    HardwareController& hw_ctrl,
+    ConfigManager& config_mgr,
+    const GpuMetrics& gpu,
+    const AppFonts& fonts
+) {
+    float s = fonts.dpi_scale;
+    auto& fan_cfg = config_mgr.get_fan();
+
+    ImGui::PushFont(fonts.title);
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "GPU FAN CURVE & COOLER CONTROLLER");
+    ImGui::PopFont();
+    ImGui::TextColored(ImVec4(0.6f, 0.65f, 0.75f, 1.0f), "Intelligent low-noise acoustic curve with hardware temperature hysteresis and zero-RPM mode");
+    ImGui::Spacing();
+
+    // Hardware status bar
+    ImGui::BeginChild("FanStatusCard", ImVec2(0, 75.0f * s), true);
+    ImGui::Columns(4, "FanStatusCols", false);
+    
+    ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "GPU TEMP");
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextColored(ImVec4(1.0f, 0.60f, 0.00f, 1.0f), "%d C", gpu.temperature_c);
+    ImGui::PopFont();
+
+    ImGui::NextColumn();
+    ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "CURRENT FAN SPEED");
+    ImGui::PushFont(fonts.bold);
+    int current_fan = hw_ctrl.get_current_fan_speed_pct();
+    if (current_fan >= 0) {
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.50f, 1.0f), "%d %%", current_fan);
+    } else {
+        ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.85f, 1.0f), "Auto (VBIOS)");
+    }
+    ImGui::PopFont();
+
+    ImGui::NextColumn();
+    ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "DRIVER BACKEND");
+    ImGui::PushFont(fonts.bold);
+    if (hw_ctrl.is_nvidia()) {
+        ImGui::TextColored(ImVec4(0.40f, 0.85f, 0.20f, 1.0f), "NVIDIA NVAPI (Active)");
+    } else if (hw_ctrl.is_amd()) {
+        ImGui::TextColored(ImVec4(0.95f, 0.20f, 0.20f, 1.0f), "AMD ADL (Active)");
+    } else {
+        ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "Generic / Standard");
+    }
+    ImGui::PopFont();
+
+    ImGui::NextColumn();
+    ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "CONTROL MODE");
+    ImGui::PushFont(fonts.bold);
+    if (!fan_cfg.enabled || fan_cfg.mode == 0) {
+        ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.85f, 1.0f), "Automatic (VBIOS)");
+    } else if (fan_cfg.mode == 1) {
+        ImGui::TextColored(ImVec4(1.0f, 0.70f, 0.00f, 1.0f), "Fixed (%d%%)", fan_cfg.fixed_speed_pct);
+    } else {
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "Custom Curve");
+    }
+    ImGui::PopFont();
+
+    ImGui::Columns(1);
+    ImGui::EndChild();
+
+    ImGui::Spacing();
+
+    // Mode Selection Radio Buttons
+    ImGui::Checkbox("Enable Custom Fan Control", &fan_cfg.enabled);
+    ImGui::SameLine(0, 20.0f * s);
+    if (fan_cfg.enabled) {
+        ImGui::RadioButton("Auto (VBIOS)", &fan_cfg.mode, 0);
+        ImGui::SameLine(0, 15.0f * s);
+        ImGui::RadioButton("Manual Fixed %", &fan_cfg.mode, 1);
+        ImGui::SameLine(0, 15.0f * s);
+        ImGui::RadioButton("Custom Fan Curve", &fan_cfg.mode, 2);
+    }
+
+    ImGui::Spacing();
+
+    if (fan_cfg.enabled && fan_cfg.mode == 1) {
+        ImGui::Text("Target Fan Speed: %d%%", fan_cfg.fixed_speed_pct);
+        ImGui::SliderInt("##FixedFanSpeed", &fan_cfg.fixed_speed_pct, 0, 100, "%d %%");
+        if (ImGui::Button("Apply Fixed Speed", ImVec2(180.0f * s, 32.0f * s))) {
+            hw_ctrl.set_fan_speed(fan_cfg.fixed_speed_pct);
+            config_mgr.save_to_file();
+        }
+    } else if (fan_cfg.enabled && fan_cfg.mode == 2) {
+        ImGui::Checkbox("Zero RPM Mode (Stop fans below 45 C)", &fan_cfg.zero_rpm_enabled);
+        ImGui::SameLine(0, 25.0f * s);
+        ImGui::SetNextItemWidth(150.0f * s);
+        ImGui::SliderInt("Hysteresis", &fan_cfg.hysteresis_c, 1, 8, "%d C");
+
+        ImGui::Spacing();
+
+        if (ImPlot::BeginPlot("##FanCurvePlot", ImVec2(-1, 260.0f * s), ImPlotFlags_NoTitle | ImPlotFlags_NoBoxSelect)) {
+            ImPlot::SetupAxes("GPU Temperature (C)", "Fan Speed (%)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
+            ImPlot::SetupAxesLimits(20.0, 100.0, 0.0, 100.0, ImPlotCond_Always);
+
+            std::vector<double> xs, ys;
+            for (const auto& p : fan_cfg.points) {
+                xs.push_back(static_cast<double>(p.temp_c));
+                ys.push_back(static_cast<double>(p.fan_pct));
+            }
+
+            ImPlot::SetNextLineStyle(ImVec4(0.00f, 0.85f, 1.00f, 1.0f), 2.5f);
+            ImPlot::PlotLine("Curve", xs.data(), ys.data(), static_cast<int>(xs.size()));
+
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle, 6.0f, ImVec4(0.00f, 1.00f, 0.60f, 1.0f), 2.0f, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImPlot::PlotScatter("Points", xs.data(), ys.data(), static_cast<int>(xs.size()));
+
+            if (gpu.temperature_c >= 20 && gpu.temperature_c <= 100) {
+                double cur_t = static_cast<double>(gpu.temperature_c);
+                double t_xs[2] = { cur_t, cur_t };
+                double t_ys[2] = { 0.0, 100.0 };
+                ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.40f, 0.10f, 0.85f), 1.5f);
+                ImPlot::PlotLine("Live Temp", t_xs, t_ys, 2);
+            }
+
+            ImPlot::EndPlot();
+        }
+
+        ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "CURVE CONTROL NODES:");
+        for (size_t i = 0; i < fan_cfg.points.size(); ++i) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::Text("Node %d:", static_cast<int>(i + 1));
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(90.0f * s);
+            ImGui::SliderInt("Temp C", &fan_cfg.points[i].temp_c, 20, 100, "%d C");
+            ImGui::SameLine();
+            ImGui::SetNextItemWidth(90.0f * s);
+            ImGui::SliderInt("Fan %", &fan_cfg.points[i].fan_pct, 0, 100, "%d %%");
+            ImGui::PopID();
+            if (i < fan_cfg.points.size() - 1) ImGui::SameLine(0, 15.0f * s);
+        }
+
+        ImGui::Spacing();
+        if (ImGui::Button("Save & Apply Curve", ImVec2(160.0f * s, 32.0f * s))) {
+            std::sort(fan_cfg.points.begin(), fan_cfg.points.end(), [](const FanPoint& a, const FanPoint& b) {
+                return a.temp_c < b.temp_c;
+            });
+            hw_ctrl.update_fan_curve(fan_cfg, gpu.temperature_c);
+            config_mgr.save_to_file();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset to Defaults", ImVec2(140.0f * s, 32.0f * s))) {
+            fan_cfg.points = { { 30, 0 }, { 50, 40 }, { 65, 60 }, { 80, 80 }, { 90, 100 } };
+            config_mgr.save_to_file();
+        }
+    } else {
+        ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "Custom fan control is disabled. Video card BIOS / driver manages fan speeds automatically.");
+        if (ImGui::Button("Enable Custom Fan Curve", ImVec2(200.0f * s, 32.0f * s))) {
+            fan_cfg.enabled = true;
+            fan_cfg.mode = 2;
+            config_mgr.save_to_file();
+        }
+    }
+}
+
+void DashboardView::render_overclock_tab(
+    HardwareController& hw_ctrl,
+    ConfigManager& config_mgr,
+    const GpuMetrics& gpu,
+    const AppFonts& fonts
+) {
+    float s = fonts.dpi_scale;
+    auto& oc_cfg = config_mgr.get_oc();
+
+    ImGui::PushFont(fonts.title);
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "GPU TUNING & OVERCLOCK / UNDERVOLT");
+    ImGui::PopFont();
+    ImGui::TextColored(ImVec4(0.6f, 0.65f, 0.75f, 1.0f), "High-precision frequency offsets, power limits, and interactive Voltage-Frequency curve editor");
+    ImGui::Spacing();
+
+    ImGui::BeginChild("OcStatusCard", ImVec2(0, 75.0f * s), true);
+    ImGui::Columns(4, "OcStatusCols", false);
+    
+    ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "GPU CORE CLOCK");
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "%d MHz", gpu.core_clock_mhz);
+    ImGui::PopFont();
+
+    ImGui::NextColumn();
+    ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "MEMORY CLOCK");
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.00f, 1.0f), "%d MHz", gpu.memory_clock_mhz);
+    ImGui::PopFont();
+
+    ImGui::NextColumn();
+    ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "POWER DRAW");
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextColored(ImVec4(0.00f, 1.00f, 0.60f, 1.0f), "%d W", gpu.power_watts);
+    ImGui::PopFont();
+
+    ImGui::NextColumn();
+    ImGui::TextColored(ImVec4(0.5f, 0.55f, 0.65f, 1.0f), "HOTSPOT TEMP");
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.25f, 1.0f), "%d C", gpu.hotspot_temp_c);
+    ImGui::PopFont();
+
+    ImGui::Columns(1);
+    ImGui::EndChild();
+
+    ImGui::Spacing();
+
+    ImGui::Checkbox("Enable GPU Overclocking / Undervolting", &oc_cfg.enabled);
+    ImGui::SameLine(0, 25.0f * s);
+    ImGui::Checkbox("Apply Overclock at Startup", &oc_cfg.apply_at_startup);
+
+    ImGui::Spacing();
+
+    ImGui::Text("Core Clock Offset (MHz): %+d MHz", oc_cfg.core_clock_offset_mhz);
+    ImGui::SliderInt("##CoreOffset", &oc_cfg.core_clock_offset_mhz, -500, 500, "%+d MHz");
+
+    ImGui::Text("Memory Clock Offset (MHz): %+d MHz", oc_cfg.memory_clock_offset_mhz);
+    ImGui::SliderInt("##MemOffset", &oc_cfg.memory_clock_offset_mhz, -1000, 2000, "%+d MHz");
+
+    ImGui::Text("Power Limit (%%): %d%%", oc_cfg.power_limit_pct);
+    ImGui::SliderInt("##PowerLimit", &oc_cfg.power_limit_pct, 50, 130, "%d %%");
+
+    ImGui::Text("Temperature Limit (C): %d C", oc_cfg.temp_limit_c);
+    ImGui::SliderInt("##TempLimit", &oc_cfg.temp_limit_c, 65, 90, "%d C");
+
+    ImGui::Text("Core Voltage Boost (mV): %+d mV", oc_cfg.voltage_offset_mv);
+    ImGui::SliderInt("##VoltOffset", &oc_cfg.voltage_offset_mv, 0, 100, "%+d mV");
+
+    ImGui::Spacing();
+
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "VOLTAGE-FREQUENCY (V/F) CURVE EDITOR (Undevolt):");
+    if (ImPlot::BeginPlot("##VfCurvePlot", ImVec2(-1, 200.0f * s), ImPlotFlags_NoTitle | ImPlotFlags_NoBoxSelect)) {
+        ImPlot::SetupAxes("Core Voltage (mV)", "Frequency Offset (MHz)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
+        ImPlot::SetupAxesLimits(650.0, 1150.0, -100.0, 300.0, ImPlotCond_Always);
+
+        std::vector<double> v_xs, v_ys;
+        for (const auto& vf : oc_cfg.vf_curve_points) {
+            v_xs.push_back(static_cast<double>(vf.voltage_mv));
+            v_ys.push_back(static_cast<double>(vf.freq_offset_mhz + oc_cfg.core_clock_offset_mhz));
+        }
+
+        ImPlot::SetNextLineStyle(ImVec4(0.00f, 0.90f, 0.60f, 1.0f), 2.5f);
+        ImPlot::PlotLine("V/F Curve", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
+
+        ImPlot::SetNextMarkerStyle(ImPlotMarker_Square, 5.0f, ImVec4(0.00f, 0.90f, 1.00f, 1.0f), 1.5f, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+        ImPlot::PlotScatter("Nodes", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
+
+        ImPlot::EndPlot();
+    }
+
+    ImGui::Spacing();
+    if (ImGui::Button("Apply Profile Settings", ImVec2(180.0f * s, 34.0f * s))) {
+        hw_ctrl.apply_overclock(oc_cfg);
+        config_mgr.save_to_file();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Reset to Defaults", ImVec2(140.0f * s, 34.0f * s))) {
+        oc_cfg.enabled = false;
+        oc_cfg.core_clock_offset_mhz = 0;
+        oc_cfg.memory_clock_offset_mhz = 0;
+        oc_cfg.power_limit_pct = 100;
+        oc_cfg.temp_limit_c = 83;
+        oc_cfg.voltage_offset_mv = 0;
+        hw_ctrl.reset_overclock();
+        config_mgr.save_to_file();
+    }
+}
+
 void DashboardView::render_benchmark_tab(
     const ProcessMonitor& proc_mon,
     const GpuMetrics& gpu,
@@ -1004,120 +1312,141 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.85f, 1.0f), "INDIVIDUAL SENSOR COLOR, MODE & LABEL:");
-    ImGui::TextDisabled("Select [Color Box], [Display Mode] and [Custom Name] for each telemetry row.");
-    ImGui::Spacing();
+    // RTSS Hardware Framerate Limiter
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "RTSS HARDWARE FRAMERATE LIMITER");
+    ImGui::TextDisabled("Ultra-low latency hardware framerate limiter injected directly into the 3D rendering pipeline.");
 
-    // Sensor Customization Table
-    const char* mode_names[] = { "Disabled", "Text Only", "Graph Only (Line)", "Text + Graph (Line)" };
-    char name_buf[64];
+    int current_fps_limit = config_mgr.get_framerate_limit();
+    const struct { const char* label; int limit; } fps_presets[] = {
+        { "UNLIMITED", 0 }, { "60 FPS", 60 }, { "120 FPS", 120 },
+        { "144 FPS", 144 }, { "165 FPS", 165 }, { "240 FPS", 240 }
+    };
 
-    // Sensor 1: Frametime
-    ColorPickerHex("##FTCol", hud.color_frametime);
-    ImGui::SameLine();
-    int cur_mode_ft = static_cast<int>(hud.mode_frametime);
-    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
-    if (ImGui::Combo("##FTMode", &cur_mode_ft, mode_names, IM_ARRAYSIZE(mode_names))) {
-        hud.mode_frametime = static_cast<SensorDisplayMode>(cur_mode_ft);
+    for (int p = 0; p < IM_ARRAYSIZE(fps_presets); ++p) {
+        if (p > 0) ImGui::SameLine();
+        bool is_active = (current_fps_limit == fps_presets[p].limit);
+        if (is_active) {
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.7f, 0.8f, 0.9f));
+        }
+        if (ImGui::Button(fps_presets[p].label)) {
+            current_fps_limit = fps_presets[p].limit;
+            config_mgr.set_framerate_limit(current_fps_limit);
+            RTSSBridge::set_framerate_limit(current_fps_limit);
+        }
+        if (is_active) {
+            ImGui::PopStyleColor();
+        }
     }
+
     ImGui::SameLine();
-    strcpy_s(name_buf, hud.label_frametime.c_str());
     ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
-    if (ImGui::InputText("Frametime Label / Line Graph##FTLbl", name_buf, sizeof(name_buf))) {
-        hud.label_frametime = name_buf;
-    }
-
-    // Sensor 2: FPS / Framerate
-    ColorPickerHex("##FPSCol", hud.color_fps);
-    ImGui::SameLine();
-    int cur_mode_fps = static_cast<int>(hud.mode_fps);
-    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
-    if (ImGui::Combo("##FPSMode", &cur_mode_fps, mode_names, IM_ARRAYSIZE(mode_names))) {
-        hud.mode_fps = static_cast<SensorDisplayMode>(cur_mode_fps);
-    }
-    ImGui::SameLine();
-    strcpy_s(name_buf, hud.label_fps.c_str());
-    ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
-    if (ImGui::InputText("FPS Label##FPSLbl", name_buf, sizeof(name_buf))) {
-        hud.label_fps = name_buf;
-    }
-
-    // Sensor 3: GPU Core Load
-    ColorPickerHex("##GPUCol", hud.color_gpu);
-    ImGui::SameLine();
-    int cur_mode_gpu = static_cast<int>(hud.mode_gpu);
-    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
-    if (ImGui::Combo("##GPUMode", &cur_mode_gpu, mode_names, IM_ARRAYSIZE(mode_names))) {
-        hud.mode_gpu = static_cast<SensorDisplayMode>(cur_mode_gpu);
-    }
-    ImGui::SameLine();
-    strcpy_s(name_buf, hud.label_gpu.c_str());
-    ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
-    if (ImGui::InputText("GPU Label##GPULbl", name_buf, sizeof(name_buf))) {
-        hud.label_gpu = name_buf;
-    }
-
-    // Sensor 4: CPU Total Load
-    ColorPickerHex("##CPUCol", hud.color_cpu);
-    ImGui::SameLine();
-    int cur_mode_cpu = static_cast<int>(hud.mode_cpu);
-    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
-    if (ImGui::Combo("##CPUMode", &cur_mode_cpu, mode_names, IM_ARRAYSIZE(mode_names))) {
-        hud.mode_cpu = static_cast<SensorDisplayMode>(cur_mode_cpu);
-    }
-    ImGui::SameLine();
-    strcpy_s(name_buf, hud.label_cpu.c_str());
-    ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
-    if (ImGui::InputText("CPU Label##CPULbl", name_buf, sizeof(name_buf))) {
-        hud.label_cpu = name_buf;
-    }
-
-    // Sensor 5: System RAM
-    ColorPickerHex("##RAMCol", hud.color_ram);
-    ImGui::SameLine();
-    int cur_mode_ram = static_cast<int>(hud.mode_ram);
-    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
-    if (ImGui::Combo("##RAMMode", &cur_mode_ram, mode_names, IM_ARRAYSIZE(mode_names))) {
-        hud.mode_ram = static_cast<SensorDisplayMode>(cur_mode_ram);
-    }
-    ImGui::SameLine();
-    strcpy_s(name_buf, hud.label_ram.c_str());
-    ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
-    if (ImGui::InputText("RAM Label##RAMLbl", name_buf, sizeof(name_buf))) {
-        hud.label_ram = name_buf;
+    if (ImGui::InputInt("Custom Cap##FpsCapInput", &current_fps_limit)) {
+        if (current_fps_limit < 0) current_fps_limit = 0;
+        config_mgr.set_framerate_limit(current_fps_limit);
+        RTSSBridge::set_framerate_limit(current_fps_limit);
     }
 
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    // 3. Metric Row Toggles & Percentiles
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "DETAILED TELEMETRY SENSORS");
-    ImGui::Columns(2, "SensorColumns", false);
+    // Reorderable Sensors Table
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "REORDERABLE SENSORS & OSD PIPELINE (MSI AFTERBURNER MAX)");
+    ImGui::TextDisabled("Reorder telemetry rows with [^] [v], customize labels, pick colors and toggle hardware line graphs.");
 
+    if (ImGui::Button("Reset Sensors to Default Layout")) {
+        ConfigManager::init_default_sensors(hud.sensors);
+    }
+
+    ImGui::Spacing();
+
+    if (hud.sensors.empty()) {
+        ConfigManager::init_default_sensors(hud.sensors);
+    }
+
+    if (ImGui::BeginTable("SensorsReorderTable", 6, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingFixedFit)) {
+        ImGui::TableSetupColumn("Order", ImGuiTableColumnFlags_WidthFixed, 65.0f * fonts.dpi_scale);
+        ImGui::TableSetupColumn("OSD", ImGuiTableColumnFlags_WidthFixed, 50.0f * fonts.dpi_scale);
+        ImGui::TableSetupColumn("Graph", ImGuiTableColumnFlags_WidthFixed, 55.0f * fonts.dpi_scale);
+        ImGui::TableSetupColumn("Color", ImGuiTableColumnFlags_WidthFixed, 60.0f * fonts.dpi_scale);
+        ImGui::TableSetupColumn("Label / Custom Name", ImGuiTableColumnFlags_WidthFixed, 180.0f * fonts.dpi_scale);
+        ImGui::TableSetupColumn("Hardware Sensor", ImGuiTableColumnFlags_WidthStretch);
+        ImGui::TableHeadersRow();
+
+        for (int i = 0; i < static_cast<int>(hud.sensors.size()); ++i) {
+            auto& s = hud.sensors[i];
+            ImGui::TableNextRow();
+
+            // Column 0: Move Up / Down
+            ImGui::TableSetColumnIndex(0);
+            ImGui::PushID(i * 100 + 1);
+            if (i > 0) {
+                if (ImGui::SmallButton("^")) {
+                    std::swap(hud.sensors[i], hud.sensors[i - 1]);
+                }
+            } else {
+                ImGui::Dummy(ImVec2(16.0f * fonts.dpi_scale, 0));
+            }
+            ImGui::SameLine();
+            if (i + 1 < static_cast<int>(hud.sensors.size())) {
+                if (ImGui::SmallButton("v")) {
+                    std::swap(hud.sensors[i], hud.sensors[i + 1]);
+                }
+            }
+            ImGui::PopID();
+
+            // Column 1: Enabled (OSD)
+            ImGui::TableSetColumnIndex(1);
+            ImGui::PushID(i * 100 + 2);
+            ImGui::Checkbox("##Show", &s.enabled);
+            ImGui::PopID();
+
+            // Column 2: Graph (Line graph)
+            ImGui::TableSetColumnIndex(2);
+            ImGui::PushID(i * 100 + 3);
+            ImGui::Checkbox("##Graph", &s.show_graph);
+            ImGui::PopID();
+
+            // Column 3: Color Picker
+            ImGui::TableSetColumnIndex(3);
+            ImGui::PushID(i * 100 + 4);
+            ColorPickerHex("##Col", s.color);
+            ImGui::PopID();
+
+            // Column 4: Label InputText
+            ImGui::TableSetColumnIndex(4);
+            ImGui::PushID(i * 100 + 5);
+            char lbl_buf[64];
+            strcpy_s(lbl_buf, s.label.c_str());
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::InputText("##Lbl", lbl_buf, sizeof(lbl_buf))) {
+                s.label = lbl_buf;
+            }
+            ImGui::PopID();
+
+            // Column 5: Hardware Sensor identifier
+            ImGui::TableSetColumnIndex(5);
+            ImGui::TextDisabled("%s", s.id.c_str());
+        }
+        ImGui::EndTable();
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Additional OSD Metric Options
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "ADDITIONAL OSD METRIC OPTIONS");
+    ImGui::Columns(2, "SubMetricColumns", false);
     ImGui::Checkbox("Show 1% Low FPS", &hud.show_1pct_low);
     ImGui::Checkbox("Show 0.1% Low FPS", &hud.show_01pct_low);
     ImGui::Checkbox("Show 0.01% Low FPS", &hud.show_001pct_low);
     ImGui::Checkbox("Show Min / Max FPS", &hud.show_min_max);
     ImGui::Checkbox("Show Stutters / Jitter Hitches", &hud.show_stutters);
     ImGui::Checkbox("Show Frametime (ms) Value", &hud.show_frametime_text);
-    ImGui::Checkbox("Show Bottleneck / Saturation Limit Badge", &hud.show_bottleneck_indicator);
-
     ImGui::NextColumn();
-
-    ImGui::Checkbox("Show GPU Core Load %", &hud.show_gpu_usage);
-    ImGui::Checkbox("Show GPU Temperature C", &hud.show_gpu_temp);
-    ImGui::Checkbox("Show GPU Hotspot Temperature", &hud.show_gpu_hotspot);
-    ImGui::Checkbox("Show GPU VRAM Temperature", &hud.show_gpu_vram_temp);
-    ImGui::Checkbox("Show GPU Dedicated VRAM Usage", &hud.show_gpu_vram);
-    ImGui::Checkbox("Show GPU Core Clock (MHz)", &hud.show_gpu_clock);
-    ImGui::Checkbox("Show CPU Core & Total Usage %", &hud.show_cpu_usage);
-    ImGui::Checkbox("Show CPU Package Temperature", &hud.show_cpu_temp);
-    ImGui::Checkbox("Show CPU Package Power (Watts)", &hud.show_cpu_power);
-    ImGui::Checkbox("Show CPU Per-Core Load Breakdown", &hud.show_cpu_per_core);
-    ImGui::Checkbox("Show Pagefile / Commit", &hud.show_pagefile);
+    ImGui::Checkbox("Show Bottleneck / Saturation Limit Badge", &hud.show_bottleneck_indicator);
     ImGui::Checkbox("Show Monitored Secondary Apps Tax", &hud.show_secondary_apps);
-
     ImGui::Columns(1);
 
     ImGui::Separator();

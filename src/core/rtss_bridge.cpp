@@ -299,6 +299,43 @@ bool RTSSBridge::install_exclusion_profile() {
     return true;
 }
 
+bool RTSSBridge::set_framerate_limit(int fps_limit) {
+    std::wstring rtss_exe = get_rtss_executable_path();
+    if (rtss_exe.empty()) return false;
+
+    wchar_t rtss_dir[MAX_PATH] = { 0 };
+    wcscpy_s(rtss_dir, rtss_exe.c_str());
+    wchar_t* last_slash = wcsrchr(rtss_dir, L'\\');
+    if (last_slash) *last_slash = L'\0';
+
+    DWORD dwLimit = (fps_limit > 0) ? static_cast<DWORD>(fps_limit) : 0;
+
+    std::wstring hooks_dll = std::wstring(rtss_dir) + L"\\RTSSHooks64.dll";
+    HMODULE hHooks = LoadLibraryW(hooks_dll.c_str());
+    if (hHooks) {
+        typedef void (*PFNLOADPROFILE)(LPCSTR);
+        typedef void (*PFNSAVEPROFILE)(LPCSTR);
+        typedef BOOL (*PFNSETPROFILEPROPERTY)(LPCSTR, LPBYTE, DWORD);
+        typedef void (*PFNUPDATEPROFILES)();
+
+        auto pfnLoad = (PFNLOADPROFILE)GetProcAddress(hHooks, "LoadProfile");
+        auto pfnSet = (PFNSETPROFILEPROPERTY)GetProcAddress(hHooks, "SetProfileProperty");
+        auto pfnSave = (PFNSAVEPROFILE)GetProcAddress(hHooks, "SaveProfile");
+        auto pfnUpdate = (PFNUPDATEPROFILES)GetProcAddress(hHooks, "UpdateProfiles");
+
+        if (pfnLoad && pfnSet && pfnSave && pfnUpdate) {
+            pfnLoad(""); // Global profile
+            pfnSet("Limit", (LPBYTE)&dwLimit, sizeof(dwLimit));
+            pfnSave("");
+            pfnUpdate();
+            FreeLibrary(hHooks);
+            return true;
+        }
+        FreeLibrary(hHooks);
+    }
+    return false;
+}
+
 RTSSBridge::RTSSBridge() {
     install_exclusion_profile();
     connect();
@@ -590,10 +627,151 @@ bool RTSSBridge::update_osd(
            << "STUTTERS: " << frames.stutter_count << "<S><C>\n";
     }
 
-    // 2. GPU Telemetry Row & Embedded Graph
-    std::string gpu_name = hud.label_gpu.empty() ? "GPU" : hud.label_gpu;
-    if (hud.mode_gpu != SensorDisplayMode::Disabled) {
-        if (hud.mode_gpu == SensorDisplayMode::TextOnly || hud.mode_gpu == SensorDisplayMode::TextAndGraph) {
+    // 2. Telemetry Rows based on customizable sensor order
+    if (!hud.sensors.empty()) {
+        for (const auto& s : hud.sensors) {
+            if (!s.enabled) continue;
+            std::string default_col = col_gpu;
+            if (s.id.rfind("cpu", 0) == 0) default_col = col_cpu;
+            else if (s.id.rfind("ram", 0) == 0 || s.id == "pagefile") default_col = col_ram;
+            else if (s.id == "fps") default_col = col_fps;
+            else if (s.id == "frametime") default_col = col_ft;
+            const std::string& col = s.color.empty() ? default_col : s.color;
+
+            if (s.id == "gpu_usage") {
+                ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << gpu.core_usage_percent << "%<C>\n";
+                if (s.show_graph) {
+                    DWORD graph_offset = dwBufferOffset;
+                    DWORD dwFlags = (hud.rtss_graph_filled ? RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FILLED : 0);
+                    DWORD sz = embed_graph(graph_buffer, sizeof(graph_buffer), dwBufferOffset, gpu_history_.data(), (DWORD)gpu_history_.size(), hud.rtss_graph_width, hud.rtss_graph_height, 1, 0.0f, 100.0f, dwFlags);
+                    if (sz > 0) {
+                        char obj_tag[32];
+                        sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
+                        ss << "<C=" << col << ">" << obj_tag << "<C>";
+                    }
+                }
+            } else if (s.id == "gpu_clock") {
+                if (gpu.core_clock_mhz > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << gpu.core_clock_mhz << " MHz<C>\n";
+                }
+            } else if (s.id == "gpu_temp") {
+                if (gpu.temperature_c > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << gpu.temperature_c << " C<C>\n";
+                }
+            } else if (s.id == "gpu_hotspot") {
+                if (gpu.hotspot_temp_c > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << gpu.hotspot_temp_c << " C<C>\n";
+                }
+            } else if (s.id == "gpu_vram_temp") {
+                if (gpu.vram_temp_c > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << gpu.vram_temp_c << " C<C>\n";
+                }
+            } else if (s.id == "gpu_power") {
+                if (gpu.power_watts > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << gpu.power_watts << " W<C>\n";
+                }
+            } else if (s.id == "gpu_vram") {
+                float vram_used_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);
+                float vram_tot_mb = static_cast<float>(gpu.vram_total_bytes) / (1024.0f * 1024.0f);
+                ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << static_cast<int>(vram_used_mb);
+                if (vram_tot_mb > 0) ss << " / " << static_cast<int>(vram_tot_mb);
+                ss << " MB<C>\n";
+            } else if (s.id == "gpu_mem_clock") {
+                if (gpu.memory_clock_mhz > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << gpu.memory_clock_mhz << " MHz<C>\n";
+                }
+            } else if (s.id == "cpu_usage") {
+                double usage = (primary && primary->is_alive) ? primary->cpu_percent : cpu.total_usage_percent;
+                ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << std::fixed << std::setprecision(1) << usage << "%<C>\n";
+                if (s.show_graph) {
+                    DWORD graph_offset = dwBufferOffset;
+                    DWORD dwFlags = (hud.rtss_graph_filled ? RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FILLED : 0);
+                    DWORD sz = embed_graph(graph_buffer, sizeof(graph_buffer), dwBufferOffset, cpu_history_.data(), (DWORD)cpu_history_.size(), hud.rtss_graph_width, hud.rtss_graph_height, 1, 0.0f, 100.0f, dwFlags);
+                    if (sz > 0) {
+                        char obj_tag[32];
+                        sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
+                        ss << "<C=" << col << ">" << obj_tag << "<C>";
+                    }
+                }
+            } else if (s.id == "cpu_temp") {
+                if (cpu.package_temp_c > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << cpu.package_temp_c << " C<C>\n";
+                }
+            } else if (s.id == "cpu_power") {
+                if (cpu.package_power_w > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << cpu.package_power_w << " W<C>\n";
+                }
+            } else if (s.id == "cpu_cores") {
+                if (!cpu.per_core_usage.empty()) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">";
+                    for (size_t c = 0; c < cpu.per_core_usage.size() && c < 8; ++c) {
+                        ss << "C" << c << ":" << static_cast<int>(cpu.per_core_usage[c]) << "% ";
+                    }
+                    if (cpu.per_core_usage.size() > 8) ss << "...";
+                    ss << "<C>\n";
+                }
+            } else if (s.id == "ram_usage") {
+                ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << std::fixed << std::setprecision(1) << ram_gb << " GB<C>\n";
+                if (s.show_graph) {
+                    DWORD graph_offset = dwBufferOffset;
+                    DWORD dwFlags = (hud.rtss_graph_filled ? RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FILLED : 0);
+                    float ram_tot_gb = static_cast<float>(proc_mon.get_system_ram_total()) / (1024.0f * 1024.0f * 1024.0f);
+                    DWORD sz = embed_graph(graph_buffer, sizeof(graph_buffer), dwBufferOffset, ram_history_.data(), (DWORD)ram_history_.size(), hud.rtss_graph_width, hud.rtss_graph_height, 1, 0.0f, ram_tot_gb > 0 ? ram_tot_gb : 32.0f, dwFlags);
+                    if (sz > 0) {
+                        char obj_tag[32];
+                        sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
+                        ss << "<C=" << col << ">" << obj_tag << "<C>";
+                    }
+                }
+            } else if (s.id == "pagefile") {
+                float page_gb = static_cast<float>(proc_mon.get_system_commit_used()) / (1024.0f * 1024.0f * 1024.0f);
+                ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << std::fixed << std::setprecision(1) << page_gb << " GB<C>\n";
+            } else if (s.id == "fps") {
+                ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">";
+                if (frames.current_fps > 0.1) {
+                    ss << std::fixed << std::setprecision(0) << frames.current_fps;
+                } else {
+                    ss << "Idle";
+                }
+                if (hud.show_1pct_low && frames.one_percent_low > 0.0) {
+                    ss << " (1%: " << static_cast<int>(frames.one_percent_low);
+                    if (hud.show_01pct_low && frames.zero_one_percent_low > 0.0) {
+                        ss << ", 0.1%: " << static_cast<int>(frames.zero_one_percent_low);
+                    }
+                    ss << ")";
+                }
+                if (hud.show_stutters && frames.stutter_count > 0) {
+                    ss << " <C=" << col_stut << ">[HITCH: " << frames.stutter_count << "]<C>";
+                }
+                ss << "<C>\n";
+            } else if (s.id == "frametime") {
+                if (frames.frametime_ms > 0.0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << std::fixed << std::setprecision(1) << frames.frametime_ms << " ms<C>\n";
+                }
+                if (s.show_graph || hud.mode_frametime == SensorDisplayMode::GraphOnly || hud.mode_frametime == SensorDisplayMode::TextAndGraph) {
+                    DWORD graph_offset = dwBufferOffset;
+                    DWORD dwFlags = (hud.rtss_graph_filled ? RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FILLED : 0) | RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FRAMETIME;
+                    float max_ft = (hud.rtss_frametime_max_ms > 0.0f) ? (hud.rtss_frametime_max_ms * 1000.0f) : 50000.0f;
+                    DWORD sz = embed_graph(graph_buffer, sizeof(graph_buffer), dwBufferOffset, nullptr, 0, hud.rtss_graph_width, hud.rtss_graph_height, 1, 0.0f, max_ft, dwFlags);
+                    if (sz > 0) {
+                        char obj_tag[32];
+                        sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
+                        ss << "<C=" << col << ">" << obj_tag << "<C>";
+                    }
+                }
+            } else if (s.id == "bottleneck") {
+                if (hud.show_bottleneck_indicator) {
+                    BottleneckInfo bInfo = detect_bottleneck(gpu, cpu, frames.current_fps, proc_mon.get_system_ram_used(), proc_mon.get_system_ram_total(), frames.frametime_ms);
+                    if (bInfo.type != BottleneckType::None) {
+                        ss << "<C=" << col << "><S=105>[" << s.label << ": " << bInfo.description << "]<S><C>\n";
+                    }
+                }
+            }
+        }
+    } else {
+        // Fallback default rendering
+        std::string gpu_name = hud.label_gpu.empty() ? "GPU" : hud.label_gpu;
+        if (hud.mode_gpu != SensorDisplayMode::Disabled) {
             ss << "<C=" << col_gpu << ">" << gpu_name << " : <C><C=" << col_val << ">";
             if (hud.show_gpu_usage) ss << gpu.core_usage_percent << "% ";
             if (hud.show_gpu_temp && gpu.temperature_c > 0) ss << "| " << gpu.temperature_c << " C ";
@@ -601,186 +779,25 @@ bool RTSSBridge::update_osd(
             if (hud.show_gpu_vram_temp && gpu.vram_temp_c > 0) ss << "| VRAM: " << gpu.vram_temp_c << " C ";
             if (hud.show_gpu_clock && gpu.core_clock_mhz > 0) ss << "| " << gpu.core_clock_mhz << " MHz ";
             if (hud.show_gpu_power && gpu.power_watts > 0) ss << "| " << gpu.power_watts << " W ";
-            if (hud.show_gpu_vram) {
-                float vram_used_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);
-                float vram_tot_mb = static_cast<float>(gpu.vram_total_bytes) / (1024.0f * 1024.0f);
-                if (vram_tot_mb > 0) {
-                    ss << "| " << static_cast<int>(vram_used_mb) << "/" << static_cast<int>(vram_tot_mb) << " MB";
-                } else {
-                    ss << "| " << static_cast<int>(vram_used_mb) << " MB";
-                }
-            }
             ss << "<C>\n";
         }
-        if (hud.mode_gpu == SensorDisplayMode::GraphOnly || hud.mode_gpu == SensorDisplayMode::TextAndGraph) {
-            DWORD graph_offset = dwBufferOffset;
-            DWORD dwFlags = (hud.rtss_graph_filled ? RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FILLED : 0);
-            DWORD sz = embed_graph(graph_buffer, sizeof(graph_buffer), dwBufferOffset, gpu_history_.data(), (DWORD)gpu_history_.size(), hud.rtss_graph_width, hud.rtss_graph_height, 1, 0.0f, 100.0f, dwFlags);
-            if (sz > 0) {
-                char obj_tag[32];
-                sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
-                ss << "<C=" << col_gpu << ">" << obj_tag << "<C>";
-            }
-        }
-    }
 
-    // 3. CPU Telemetry Row & Embedded Graph
-    std::string cpu_name = hud.label_cpu.empty() ? "CPU" : hud.label_cpu;
-    if (hud.mode_cpu != SensorDisplayMode::Disabled) {
-        if (hud.mode_cpu == SensorDisplayMode::TextOnly || hud.mode_cpu == SensorDisplayMode::TextAndGraph) {
+        std::string cpu_name = hud.label_cpu.empty() ? "CPU" : hud.label_cpu;
+        if (hud.mode_cpu != SensorDisplayMode::Disabled) {
             ss << "<C=" << col_cpu << ">" << cpu_name << " : <C><C=" << col_val << ">";
-            if (primary && primary->is_alive) {
-                ss << std::fixed << std::setprecision(1) << primary->cpu_percent << "% ";
-                if (hud.show_cpu_temp && cpu.package_temp_c > 0) ss << "| " << cpu.package_temp_c << " C ";
-                if (hud.show_cpu_power && cpu.package_power_w > 0) ss << "| " << cpu.package_power_w << " W ";
-                if (primary->cpu_percent < 0.05) {
-                    ss << "[IDLE] ";
-                }
-                ss << "(" << wide_to_utf8(primary->name) << ")";
-            } else {
-                ss << std::fixed << std::setprecision(1) << cpu.total_usage_percent << "% ";
-                if (hud.show_cpu_temp && cpu.package_temp_c > 0) ss << "| " << cpu.package_temp_c << " C ";
-                if (hud.show_cpu_power && cpu.package_power_w > 0) ss << "| " << cpu.package_power_w << " W ";
-                ss << "[Total]";
+            double u = (primary && primary->is_alive) ? primary->cpu_percent : cpu.total_usage_percent;
+            ss << std::fixed << std::setprecision(1) << u << "% ";
+            if (hud.show_cpu_temp && cpu.package_temp_c > 0) ss << "| " << cpu.package_temp_c << " C ";
+            if (hud.show_cpu_power && cpu.package_power_w > 0) ss << "| " << cpu.package_power_w << " W ";
+            ss << "<C>\n";
+        }
+
+        if (hud.mode_fps != SensorDisplayMode::Disabled) {
+            ss << "<C=" << col_fps << ">FPS : <C><C=" << col_val << ">" << std::fixed << std::setprecision(0) << frames.current_fps;
+            if (hud.show_1pct_low && frames.one_percent_low > 0.0) {
+                ss << " (1%: " << static_cast<int>(frames.one_percent_low) << ")";
             }
             ss << "<C>\n";
-
-            if (hud.show_cpu_per_core && !cpu.per_core_usage.empty()) {
-                ss << "<C=" << col_cpu << ">Cores : <C><C=" << col_val << ">";
-                for (size_t c = 0; c < cpu.per_core_usage.size() && c < 8; ++c) {
-                    ss << "C" << c << ":" << static_cast<int>(cpu.per_core_usage[c]) << "% ";
-                }
-                if (cpu.per_core_usage.size() > 8) {
-                    ss << "...";
-                }
-                ss << "<C>\n";
-            }
-        }
-        if (hud.mode_cpu == SensorDisplayMode::GraphOnly || hud.mode_cpu == SensorDisplayMode::TextAndGraph) {
-            DWORD graph_offset = dwBufferOffset;
-            DWORD dwFlags = (hud.rtss_graph_filled ? RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FILLED : 0);
-            DWORD sz = embed_graph(graph_buffer, sizeof(graph_buffer), dwBufferOffset, cpu_history_.data(), (DWORD)cpu_history_.size(), hud.rtss_graph_width, hud.rtss_graph_height, 1, 0.0f, 100.0f, dwFlags);
-            if (sz > 0) {
-                char obj_tag[32];
-                sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
-                ss << "<C=" << col_cpu << ">" << obj_tag << "<C>";
-            }
-        }
-    }
-
-    // 4. System RAM Row
-    std::string ram_name = hud.label_ram.empty() ? "RAM" : hud.label_ram;
-    if (hud.mode_ram != SensorDisplayMode::Disabled) {
-        float ram_used_gb = static_cast<float>(proc_mon.get_system_ram_used()) / (1024.0f * 1024.0f * 1024.0f);
-        float ram_tot_gb = static_cast<float>(proc_mon.get_system_ram_total()) / (1024.0f * 1024.0f * 1024.0f);
-        if (hud.mode_ram == SensorDisplayMode::TextOnly || hud.mode_ram == SensorDisplayMode::TextAndGraph) {
-            if (ram_tot_gb > 0.0f) {
-                ss << "<C=" << col_ram << ">" << ram_name << " : <C><C=" << col_val << ">"
-                   << std::fixed << std::setprecision(1) << ram_used_gb << " / "
-                   << std::fixed << std::setprecision(1) << ram_tot_gb << " GB";
-                if (hud.show_pagefile) {
-                    float page_used_gb = static_cast<float>(proc_mon.get_system_commit_used()) / (1024.0f * 1024.0f * 1024.0f);
-                    ss << " | Page: " << std::fixed << std::setprecision(1) << page_used_gb << " GB";
-                }
-                ss << "<C>\n";
-            }
-        }
-        if (hud.mode_ram == SensorDisplayMode::GraphOnly || hud.mode_ram == SensorDisplayMode::TextAndGraph) {
-            DWORD graph_offset = dwBufferOffset;
-            DWORD dwFlags = (hud.rtss_graph_filled ? RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FILLED : 0);
-            DWORD sz = embed_graph(graph_buffer, sizeof(graph_buffer), dwBufferOffset, ram_history_.data(), (DWORD)ram_history_.size(), hud.rtss_graph_width, hud.rtss_graph_height, 1, 0.0f, ram_tot_gb > 0 ? ram_tot_gb : 32.0f, dwFlags);
-            if (sz > 0) {
-                char obj_tag[32];
-                sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
-                ss << "<C=" << col_ram << ">" << obj_tag << "<C>";
-            }
-        }
-    }
-
-    // 5. FPS, Percentiles & Stutters Row
-    std::string fps_name = hud.label_fps.empty() ? "FPS" : hud.label_fps;
-    std::string ft_name = hud.label_frametime.empty() ? "FT" : hud.label_frametime;
-    if (hud.mode_fps != SensorDisplayMode::Disabled) {
-        ss << "<C=" << col_fps << ">" << fps_name << " : <C><C=" << col_val << ">";
-        if (frames.current_fps > 0.1) {
-            ss << std::fixed << std::setprecision(0) << frames.current_fps;
-        } else {
-            ss << "Idle";
-        }
-
-        if (hud.show_1pct_low && frames.one_percent_low > 0.0) {
-            ss << "  (1%: " << std::fixed << std::setprecision(0) << frames.one_percent_low;
-            if (hud.show_01pct_low && frames.zero_one_percent_low > 0.0) {
-                ss << ", 0.1%: " << std::fixed << std::setprecision(0) << frames.zero_one_percent_low;
-            }
-            if (hud.show_001pct_low && frames.zero_zero_one_percent_low > 0.0) {
-                ss << ", 0.01%: " << std::fixed << std::setprecision(0) << frames.zero_zero_one_percent_low;
-            }
-            ss << ")";
-        }
-
-        if (hud.mode_frametime == SensorDisplayMode::TextOnly || hud.mode_frametime == SensorDisplayMode::TextAndGraph) {
-            if (frames.frametime_ms > 0.0) {
-                ss << "  " << ft_name << ": " << std::fixed << std::setprecision(1) << frames.frametime_ms << "ms";
-            }
-        }
-
-        if (hud.show_stutters && frames.stutter_count > 0) {
-            ss << "  <C=" << col_stut << ">[HITCH: " << frames.stutter_count << "]<C>";
-        }
-        ss << "<C>\n";
-    }
-
-    // 6. FRAMETIME HARDWARE LINE GRAPH (MSI Afterburner Style)
-    if (hud.mode_frametime == SensorDisplayMode::GraphOnly || hud.mode_frametime == SensorDisplayMode::TextAndGraph) {
-        DWORD graph_offset = dwBufferOffset;
-        DWORD dwFlags = (hud.rtss_graph_filled ? RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FILLED : 0) | RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FRAMETIME;
-        float max_ft = (hud.rtss_frametime_max_ms > 0.0f) ? (hud.rtss_frametime_max_ms * 1000.0f) : 50000.0f; // in microseconds
-        DWORD sz = embed_graph(graph_buffer, sizeof(graph_buffer), dwBufferOffset, nullptr, 0, hud.rtss_graph_width, hud.rtss_graph_height, 1, 0.0f, max_ft, dwFlags);
-        if (sz > 0) {
-            char obj_tag[32];
-            sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
-            ss << "<C=" << col_ft << ">" << obj_tag << "<C>";
-        }
-    }
-
-    // 7. Monitored Secondary Background Applications (AnyPerfomans exclusive!)
-    if (hud.show_secondary_apps) {
-        const auto& targets = proc_mon.get_monitored_targets();
-        bool has_secondary = false;
-        for (const auto& t : targets) {
-            if (t.is_primary) continue;
-            has_secondary = true;
-            float ram_mb = static_cast<float>(t.private_working_set) / (1024.0f * 1024.0f);
-            std::string short_name = wide_to_utf8(t.name);
-            if (short_name.length() > 10) short_name = short_name.substr(0, 10);
-
-            ss << "<C=FF5577>" << short_name << "<C> : <C=" << col_val << ">"
-               << std::fixed << std::setprecision(1) << t.cpu_percent << "% | "
-               << static_cast<int>(ram_mb) << " MB<C>\n";
-        }
-
-        if (has_secondary) {
-            double total_sec_cpu = proc_mon.get_total_secondary_cpu();
-            float total_sec_ram = static_cast<float>(proc_mon.get_total_secondary_ram()) / (1024.0f * 1024.0f);
-            ss << "<C=FF9100>App Tax : <C><C=FF3D00>+"
-               << std::fixed << std::setprecision(1) << total_sec_cpu << "% CPU | "
-               << static_cast<int>(total_sec_ram) << " MB RAM<C>\n";
-        }
-    }
-
-    // 8. Live Bottleneck Hardware Indicator (MSI Afterburner MAX)
-    if (hud.show_bottleneck_indicator) {
-        BottleneckInfo bInfo = detect_bottleneck(
-            gpu,
-            cpu,
-            frames.current_fps,
-            proc_mon.get_system_ram_used(),
-            proc_mon.get_system_ram_total()
-        );
-        if (bInfo.type != BottleneckType::None) {
-            std::string b_col = hud.color_bottleneck.empty() ? "FF3B30" : hud.color_bottleneck;
-            ss << "<C=" << b_col << "><S=105>[LIMIT: " << bInfo.description << "]<S><C>\n";
         }
     }
 

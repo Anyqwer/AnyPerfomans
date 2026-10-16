@@ -45,30 +45,31 @@ std::wstring ReportGenerator::generate_html_report(
     }
     ft_json << "]";
 
-    // Part 1: Head & CSS
+    // Part 1: Head & CSS (Liquid Glass Edition)
     html << R"html(<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AnyPerfomans Benchmark Report</title>
+    <title>AnyPerfomans - Benchmark Report</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <style>
         :root {
-            --bg-dark: #0a0b0f;
-            --card-bg: rgba(18, 20, 28, 0.82);
-            --border-red: rgba(230, 46, 67, 0.35);
+            --bg-dark: #07090e;
+            --card-bg: rgba(13, 17, 26, 0.78);
+            --card-border: rgba(0, 240, 255, 0.22);
+            --neon-cyan: #00f0ff;
+            --neon-green: #00e676;
             --neon-red: #ff334b;
-            --accent-glow: rgba(255, 51, 75, 0.15);
+            --neon-amber: #ffb300;
+            --accent-glow: rgba(0, 240, 255, 0.15);
             --text-main: #f5f6fa;
             --text-muted: #8c92a4;
-            --green: #00e676;
-            --yellow: #ffb300;
         }
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-            background: radial-gradient(circle at 50% 0%, #20080d 0%, var(--bg-dark) 75%);
+            background: radial-gradient(circle at 50% 0%, #0d1e2e 0%, var(--bg-dark) 80%);
             color: var(--text-main);
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             min-height: 100vh;
@@ -81,13 +82,13 @@ std::wstring ReportGenerator::generate_html_report(
             align-items: center;
             margin-bottom: 25px;
             padding-bottom: 15px;
-            border-bottom: 1px solid var(--border-red);
+            border-bottom: 1px solid var(--card-border);
         }
-        .logo { font-size: 24px; font-weight: 800; color: var(--neon-red); letter-spacing: 1.5px; }
+        .logo { font-size: 24px; font-weight: 800; color: var(--neon-cyan); letter-spacing: 1.5px; text-shadow: 0 0 16px rgba(0, 240, 255, 0.4); }
         .meta-text { color: var(--text-muted); font-size: 14px; }
         .actions { display: flex; gap: 12px; }
         .btn {
-            background: linear-gradient(135deg, #e62e43 0%, #aa1426 100%);
+            background: linear-gradient(135deg, #00b4d8 0%, #0077b6 100%);
             color: #fff;
             border: none;
             padding: 10px 18px;
@@ -97,13 +98,13 @@ std::wstring ReportGenerator::generate_html_report(
             transition: all 0.2s ease;
             box-shadow: 0 4px 15px var(--accent-glow);
         }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255, 51, 75, 0.4); }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0, 240, 255, 0.4); }
         .btn-outline {
             background: transparent;
-            border: 1px solid var(--border-red);
+            border: 1px solid var(--card-border);
             color: var(--text-main);
         }
-        .btn-outline:hover { background: rgba(230, 46, 67, 0.1); }
+        .btn-outline:hover { background: rgba(0, 240, 255, 0.1); }
 
         /* KPI Cards Grid */
         .kpi-grid {
@@ -114,22 +115,24 @@ std::wstring ReportGenerator::generate_html_report(
         }
         .card {
             background: var(--card-bg);
-            border: 1px solid var(--border-red);
+            border: 1px solid var(--card-border);
             border-radius: 12px;
             padding: 18px;
             backdrop-filter: blur(12px);
             box-shadow: 0 8px 30px rgba(0,0,0,0.5);
+            transition: transform 0.2s ease, border-color 0.2s ease;
         }
-        .card-title { font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; }
+        .card:hover { transform: translateY(-2px); border-color: rgba(0, 240, 255, 0.45); }
+        .card-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1.2px; }
         .card-val { font-size: 32px; font-weight: 800; margin: 6px 0; color: #fff; }
-        .val-fps { color: var(--green); }
-        .val-low { color: var(--neon-red); }
-        .card-sub { font-size: 13px; color: var(--text-muted); }
+        .val-fps { color: var(--neon-green); text-shadow: 0 0 12px rgba(0, 230, 118, 0.3); }
+        .val-low { color: var(--neon-cyan); }
+        .card-sub { font-size: 12px; color: var(--text-muted); line-height: 1.4; }
 
-        /* Chart Section */
+        /* Bottleneck & Chart Section */
         .chart-card {
             background: var(--card-bg);
-            border: 1px solid var(--border-red);
+            border: 1px solid var(--card-border);
             border-radius: 12px;
             padding: 24px;
             margin-bottom: 25px;
@@ -140,7 +143,7 @@ std::wstring ReportGenerator::generate_html_report(
         /* Table */
         .table-card {
             background: var(--card-bg);
-            border: 1px solid var(--border-red);
+            border: 1px solid var(--card-border);
             border-radius: 12px;
             padding: 20px;
             backdrop-filter: blur(12px);
@@ -155,9 +158,19 @@ std::wstring ReportGenerator::generate_html_report(
             border-radius: 4px;
             font-size: 11px;
             font-weight: 700;
-            background: rgba(230, 46, 67, 0.2);
+            background: rgba(0, 240, 255, 0.15);
+            color: var(--neon-cyan);
+            border: 1px solid rgba(0, 240, 255, 0.35);
+        }
+        .badge-red {
+            background: rgba(255, 51, 75, 0.15);
             color: var(--neon-red);
-            border: 1px solid rgba(230, 46, 67, 0.4);
+            border-color: rgba(255, 51, 75, 0.35);
+        }
+        .badge-green {
+            background: rgba(0, 230, 118, 0.15);
+            color: var(--neon-green);
+            border-color: rgba(0, 230, 118, 0.35);
         }
     </style>
 </head>
@@ -165,11 +178,11 @@ std::wstring ReportGenerator::generate_html_report(
     <div class="container" id="report-container">
         <div class="header">
             <div>
-                <div class="logo">⚡ ANYPERFOMANS</div>
+                <div class="logo">⚡ ANYPERFOMANS <span style="font-size: 14px; font-weight: 500; color: #8c92a4;">LIQUID GLASS</span></div>
                 <div class="meta-text">Target: <strong>)html";
 
     html << escape_html(wide_to_utf8(record.session_name))
-         << "</strong> | Duration: " << record.duration_seconds << "s | Generated via Kernel ETW Engine</div>\n"
+         << "</strong> | Duration: " << record.duration_seconds << "s | High-Precision ETW Present Engine</div>\n"
          << R"html(            </div>
             <div class="actions">
                 <button class="btn" onclick="copyCardAsImage()">📸 Copy Card for Discord/TG</button>
@@ -179,7 +192,7 @@ std::wstring ReportGenerator::generate_html_report(
 
         <div class="kpi-grid">
             <div class="card">
-                <div class="card-title">Average FPS</div>
+                <div class="card-title">Average Framerate</div>
                 <div class="card-val val-fps">)html"
          << std::fixed << std::setprecision(1) << record.avg_fps
          << R"html(</div>
@@ -189,28 +202,28 @@ std::wstring ReportGenerator::generate_html_report(
          << R"html( FPS</div>
             </div>
             <div class="card">
-                <div class="card-title">1% Low FPS</div>
+                <div class="card-title">Low Percentiles</div>
                 <div class="card-val val-low">)html"
          << std::fixed << std::setprecision(1) << record.one_percent_low
          << R"html(</div>
-                <div class="card-sub">0.1%: )html"
+                <div class="card-sub">1% Low | 0.1%: )html"
          << std::fixed << std::setprecision(1) << record.zero_one_percent_low
          << " | 0.01%: " << std::fixed << std::setprecision(1) << record.zero_zero_one_percent_low
          << R"html( FPS</div>
             </div>
             <div class="card">
-                <div class="card-title">Pacing Jitter (&sigma;)</div>
+                <div class="card-title">Frametime & Pacing</div>
                 <div class="card-val">)html"
-         << std::fixed << std::setprecision(2) << record.pacing_std_dev_ms
-         << R"html( ms</div>
-                <div class="card-sub">Avg Frametime: )html"
          << std::fixed << std::setprecision(2) << record.avg_frametime_ms
+         << R"html( ms</div>
+                <div class="card-sub">Jitter (&sigma;): )html"
+         << std::fixed << std::setprecision(2) << record.pacing_std_dev_ms
          << R"html( ms</div>
             </div>
             <div class="card">
-                <div class="card-title">Stutters / Hitches</div>
+                <div class="card-title">Stutters & Hitches</div>
                 <div class="card-val" style="color: )html"
-         << (record.stutter_count > 5 ? "var(--neon-red)" : "var(--green)")
+         << (record.stutter_count > 5 ? "var(--neon-red)" : "var(--neon-green)")
          << R"html(;">)html"
          << record.stutter_count
          << R"html(</div>
@@ -223,23 +236,53 @@ std::wstring ReportGenerator::generate_html_report(
                 <div class="card-val">)html"
          << gpu.core_usage_percent
          << R"html(%</div>
-                <div class="card-sub">)html"
-         << escape_html(wide_to_utf8(gpu.adapter_name)) << (gpu.temperature_c > 0 ? (" | " + std::to_string(gpu.temperature_c) + " C") : "")
-         << R"html(</div>
+                <div class="card-sub">)html";
+
+    html << escape_html(wide_to_utf8(gpu.adapter_name));
+    if (gpu.temperature_c > 0) {
+        html << "<br>Temp: " << gpu.temperature_c << "&deg;C";
+        if (gpu.hotspot_temp_c > 0) html << " (Hotspot: " << gpu.hotspot_temp_c << "&deg;C)";
+        if (gpu.vram_temp_c > 0) html << " (VRAM: " << gpu.vram_temp_c << "&deg;C)";
+    }
+    if (gpu.power_watts > 0) {
+        html << " | Power: " << gpu.power_watts << " W";
+    }
+
+    // Determine Bottleneck State
+    std::string bneck_label = "BALANCED / UNCONSTRAINED";
+    std::string bneck_badge_class = "badge-green";
+    std::string bneck_desc = "Balanced workload between CPU and GPU pipeline.";
+    if (gpu.core_usage_percent >= 95) {
+        bneck_label = "GPU BOUND (OPTIMAL)";
+        bneck_badge_class = "badge";
+        bneck_desc = "Graphics card is 95%+ saturated. System is fully leveraging the GPU.";
+    } else if (record.pacing_std_dev_ms < 0.35 && gpu.core_usage_percent < 85) {
+        bneck_label = "FRAMERATE CAPPED / VSYNC";
+        bneck_badge_class = "badge";
+        bneck_desc = "Framerate is constrained by an in-game or external FPS limiter.";
+    } else if (gpu.core_usage_percent < 85) {
+        bneck_label = "CPU / ENGINE LIMIT";
+        bneck_badge_class = "badge-red";
+        bneck_desc = "GPU load is below 85%. Rendering throughput is constrained by CPU or RAM bandwidth.";
+    }
+
+    html << R"html(</div>
             </div>
             <div class="card">
-                <div class="card-title">Monitored Apps</div>
-                <div class="card-val">)html"
-         << record.process_summaries.size()
+                <div class="card-title">Bottleneck Analysis</div>
+                <div class="card-val" style="font-size: 18px; margin-top: 12px;"><span class="badge )html"
+         << bneck_badge_class << R"html(" style="font-size: 13px; padding: 4px 10px;">)html"
+         << bneck_label << R"html(</span></div>
+                <div class="card-sub" style="margin-top: 8px;">)html"
+         << bneck_desc
          << R"html(</div>
-                <div class="card-sub">Concurrent Process Overhead</div>
             </div>
         </div>
 
         <div class="chart-card">
             <div class="chart-header">
                 <h3>Frametime Latency Timeline (ms)</h3>
-                <span class="badge">Kernel DXGI Trace</span>
+                <span class="badge">Kernel DXGI / ETW Trace</span>
             </div>
             <canvas id="frametimeChart" height="95"></canvas>
         </div>
@@ -266,7 +309,7 @@ std::wstring ReportGenerator::generate_html_report(
              << "<td>" << p.pid << "</td>\n"
              << "<td>" << std::fixed << std::setprecision(2) << p.avg_cpu_percent << "%</td>\n"
              << "<td>" << p.avg_ram_mb << " MB</td>\n"
-             << "<td><span class=\"badge\">" << (is_primary ? "PRIMARY APP" : "SECONDARY") << "</span></td>\n"
+             << "<td><span class=\"badge " << (is_primary ? "badge-green" : "") << "\">" << (is_primary ? "PRIMARY APP" : "SECONDARY") << "</span></td>\n"
              << "</tr>\n";
     }
 
@@ -282,8 +325,8 @@ std::wstring ReportGenerator::generate_html_report(
 
         const ctx = document.getElementById('frametimeChart').getContext('2d');
         const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-        gradient.addColorStop(0, 'rgba(255, 51, 75, 0.4)');
-        gradient.addColorStop(1, 'rgba(255, 51, 75, 0.0)');
+        gradient.addColorStop(0, 'rgba(0, 240, 255, 0.45)');
+        gradient.addColorStop(1, 'rgba(0, 240, 255, 0.0)');
 
         new Chart(ctx, {
             type: 'line',
@@ -292,7 +335,7 @@ std::wstring ReportGenerator::generate_html_report(
                 datasets: [{
                     label: 'Frametime (ms)',
                     data: ftData,
-                    borderColor: '#ff334b',
+                    borderColor: '#00f0ff',
                     backgroundColor: gradient,
                     fill: true,
                     tension: 0.1,
@@ -319,7 +362,7 @@ std::wstring ReportGenerator::generate_html_report(
         async function copyCardAsImage() {
             try {
                 const element = document.getElementById('report-container');
-                const canvas = await html2canvas(element, { backgroundColor: '#0a0b0f' });
+                const canvas = await html2canvas(element, { backgroundColor: '#07090e' });
                 canvas.toBlob(async (blob) => {
                     await navigator.clipboard.write([
                         new ClipboardItem({ 'image/png': blob })
