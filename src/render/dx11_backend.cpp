@@ -12,6 +12,8 @@
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+#include "anyperf/tray_manager.hpp"
+
 namespace anyperf {
 
 static Dx11Backend* g_backend_instance = nullptr;
@@ -31,6 +33,37 @@ static LRESULT WINAPI StaticWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM l
             if ((wParam & 0xfff0) == SC_KEYMENU) // Disable ALT application menu
                 return 0;
             break;
+        case WM_CLOSE:
+            if (g_backend_instance && g_backend_instance->should_minimize_to_tray_on_close()) {
+                g_backend_instance->set_overlay_mode(OverlayMode::Hidden);
+                return 0; // Seamlessly minimize to system tray instead of killing process
+            }
+            break;
+        case WM_COMMAND:
+            if (g_backend_instance) {
+                int cmd = LOWORD(wParam);
+                if (cmd == TRAY_CMD_SHOW_DASHBOARD) {
+                    g_backend_instance->set_overlay_mode(OverlayMode::Dashboard);
+                } else if (cmd == TRAY_CMD_TOGGLE_HUD) {
+                    auto cur = g_backend_instance->get_overlay_mode();
+                    g_backend_instance->set_overlay_mode(cur == OverlayMode::MiniHud ? OverlayMode::Hidden : OverlayMode::MiniHud);
+                } else if (cmd == TRAY_CMD_RESTART) {
+                    g_backend_instance->request_restart();
+                } else if (cmd == TRAY_CMD_EXIT) {
+                    g_backend_instance->request_exit();
+                }
+            }
+            return 0;
+        case WM_TRAY_CALLBACK:
+            if (g_backend_instance && g_backend_instance->get_tray_manager()) {
+                int out_cmd = 0;
+                if (g_backend_instance->get_tray_manager()->handle_tray_message(wParam, lParam, out_cmd)) {
+                    if (out_cmd == TRAY_CMD_SHOW_DASHBOARD) {
+                        g_backend_instance->set_overlay_mode(OverlayMode::Dashboard);
+                    }
+                }
+            }
+            return 0;
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
@@ -342,15 +375,16 @@ void Dx11Backend::handle_resize(UINT width, UINT height) {
 }
 
 bool Dx11Backend::process_messages() {
+    if (quit_requested_) return false;
     MSG msg;
     while (PeekMessageW(&msg, nullptr, 0U, 0U, PM_REMOVE)) {
         TranslateMessage(&msg);
         DispatchMessageW(&msg);
-        if (msg.message == WM_QUIT) {
+        if (msg.message == WM_QUIT || quit_requested_) {
             return false;
         }
     }
-    return true;
+    return !quit_requested_;
 }
 
 void Dx11Backend::begin_frame() {

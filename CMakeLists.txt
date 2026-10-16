@@ -68,12 +68,14 @@ FetchContent_MakeAvailable(nlohmann_json)
 # 4. Main Project
 set(CORE_SOURCES
     src/core/config_manager.cpp
+    src/core/cpu_monitor.cpp
     src/core/etw_tracker.cpp
     src/core/gpu_monitor.cpp
     src/core/process_monitor.cpp
     src/core/report_generator.cpp
     src/core/rtss_bridge.cpp
     src/core/thread_profiler.cpp
+    src/core/tray_manager.cpp
     src/render/dx11_backend.cpp
     src/ui/dashboard_view.cpp
 )
@@ -102,6 +104,10 @@ target_link_libraries(AnyPerfomans PRIVATE
     ntdll
     advapi32
     pdh
+    shell32
+    wbemuuid
+    ole32
+    oleaut32
 )
 
 set_target_properties(AnyPerfomans PROPERTIES

@@ -6,6 +6,7 @@
 #include "anyperf/thread_profiler.hpp"
 #include "anyperf/config_manager.hpp"
 #include "anyperf/gpu_monitor.hpp"
+#include "anyperf/cpu_monitor.hpp"
 #include <string>
 #include <vector>
 #include <unordered_map>
@@ -28,6 +29,7 @@ public:
         ThreadProfiler& thread_prof,
         EtwTracker& etw_tracker,
         GpuMonitor& gpu_mon,
+        CpuMonitor& cpu_mon,
         ConfigManager& config_mgr,
         RTSSBridge& rtss_bridge,
         Dx11Backend& backend,
@@ -63,6 +65,7 @@ private:
         const ProcessMonitor& proc_mon,
         const EtwTracker& etw_tracker,
         const GpuMetrics& gpu,
+        const CpuMetrics& cpu,
         const FrameStats& frame_stats,
         const AppFonts& fonts
     );
@@ -91,6 +94,7 @@ private:
         const ProcessMonitor& proc_mon,
         const EtwTracker& etw_tracker,
         const GpuMetrics& gpu,
+        const CpuMetrics& cpu,
         const ConfigManager& config_mgr,
         Dx11Backend& backend,
         const FrameStats& frames,

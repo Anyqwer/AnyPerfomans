@@ -93,14 +93,28 @@ bool ConfigManager::load_from_file(const std::wstring& filename) {
 
         hud_.show_gpu_usage = j.value("show_gpu_usage", true);
         hud_.show_gpu_temp = j.value("show_gpu_temp", true);
+        hud_.show_gpu_hotspot = j.value("show_gpu_hotspot", true);
+        hud_.show_gpu_vram_temp = j.value("show_gpu_vram_temp", true);
         hud_.show_gpu_vram = j.value("show_gpu_vram", true);
         hud_.show_gpu_clock = j.value("show_gpu_clock", true);
         hud_.show_gpu_power = j.value("show_gpu_power", false);
 
         hud_.show_cpu_usage = j.value("show_cpu_usage", true);
+        hud_.show_cpu_temp = j.value("show_cpu_temp", true);
+        hud_.show_cpu_power = j.value("show_cpu_power", true);
+        hud_.show_cpu_per_core = j.value("show_cpu_per_core", false);
         hud_.show_system_ram = j.value("show_system_ram", true);
         hud_.show_pagefile = j.value("show_pagefile", true);
         hud_.show_secondary_apps = j.value("show_secondary_apps", true);
+
+        hud_.show_bottleneck_indicator = j.value("show_bottleneck_indicator", true);
+        hud_.color_bottleneck = j.value("color_bottleneck", "FF3B30");
+
+        hud_.minimize_to_tray_on_close = j.value("minimize_to_tray_on_close", true);
+        hud_.show_tray_temperature = j.value("show_tray_temperature", true);
+        hud_.tray_temp_is_gpu = j.value("tray_temp_is_gpu", true);
+        hud_.autostart_with_windows = j.value("autostart_with_windows", false);
+        hud_.start_minimized_to_tray = j.value("start_minimized_to_tray", false);
 
         hotkeys_.toggle_overlay_key = static_cast<UINT>(j.value("toggle_overlay_key", static_cast<int>(VK_F11)));
         hotkeys_.toggle_benchmark_key = static_cast<UINT>(j.value("toggle_benchmark_key", static_cast<int>(VK_F10)));
@@ -169,14 +183,28 @@ bool ConfigManager::save_to_file(const std::wstring& filename) {
 
         {"show_gpu_usage", hud_.show_gpu_usage},
         {"show_gpu_temp", hud_.show_gpu_temp},
+        {"show_gpu_hotspot", hud_.show_gpu_hotspot},
+        {"show_gpu_vram_temp", hud_.show_gpu_vram_temp},
         {"show_gpu_vram", hud_.show_gpu_vram},
         {"show_gpu_clock", hud_.show_gpu_clock},
         {"show_gpu_power", hud_.show_gpu_power},
 
         {"show_cpu_usage", hud_.show_cpu_usage},
+        {"show_cpu_temp", hud_.show_cpu_temp},
+        {"show_cpu_power", hud_.show_cpu_power},
+        {"show_cpu_per_core", hud_.show_cpu_per_core},
         {"show_system_ram", hud_.show_system_ram},
         {"show_pagefile", hud_.show_pagefile},
         {"show_secondary_apps", hud_.show_secondary_apps},
+
+        {"show_bottleneck_indicator", hud_.show_bottleneck_indicator},
+        {"color_bottleneck", hud_.color_bottleneck},
+
+        {"minimize_to_tray_on_close", hud_.minimize_to_tray_on_close},
+        {"show_tray_temperature", hud_.show_tray_temperature},
+        {"tray_temp_is_gpu", hud_.tray_temp_is_gpu},
+        {"autostart_with_windows", hud_.autostart_with_windows},
+        {"start_minimized_to_tray", hud_.start_minimized_to_tray},
 
         {"toggle_overlay_key", static_cast<int>(hotkeys_.toggle_overlay_key)},
         {"toggle_benchmark_key", static_cast<int>(hotkeys_.toggle_benchmark_key)}

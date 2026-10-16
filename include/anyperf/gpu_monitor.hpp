@@ -20,6 +20,8 @@ struct GpuMetrics {
     int core_usage_percent = 0;        // GPU Core load % (0-100)
     int memory_controller_percent = 0; // VRAM controller load %
     int temperature_c = 0;             // Core temperature in °C
+    int hotspot_temp_c = 0;            // Hotspot / Junction temperature in °C
+    int vram_temp_c = 0;               // VRAM / Memory temperature in °C
 
     // Memory (VRAM)
     size_t vram_used_bytes = 0;        // Live VRAM in use (bytes)
@@ -71,6 +73,7 @@ private:
     using pfn_nvmlDeviceGetMemoryInfo = int(*)(void*, void*);
     using pfn_nvmlDeviceGetClockInfo = int(*)(void*, int, unsigned int*);
     using pfn_nvmlDeviceGetPowerUsage = int(*)(void*, unsigned int*);
+    using pfn_nvmlDeviceGetFieldValues = int(*)(void*, int, void*);
 
     pfn_nvmlInit_v2 nvmlInit_ = nullptr;
     pfn_nvmlShutdown nvmlShutdown_ = nullptr;
@@ -81,6 +84,7 @@ private:
     pfn_nvmlDeviceGetMemoryInfo nvmlDeviceGetMemoryInfo_ = nullptr;
     pfn_nvmlDeviceGetClockInfo nvmlDeviceGetClockInfo_ = nullptr;
     pfn_nvmlDeviceGetPowerUsage nvmlDeviceGetPowerUsage_ = nullptr;
+    pfn_nvmlDeviceGetFieldValues nvmlDeviceGetFieldValues_ = nullptr;
 
     // Windows PDH Universal GPU Engine Counters
     PDH_HQUERY pdh_query_ = nullptr;

@@ -79,14 +79,30 @@ struct HudConfig {
     // Hardware Telemetry Toggles
     bool show_gpu_usage = true;
     bool show_gpu_temp = true;
+    bool show_gpu_hotspot = true;
+    bool show_gpu_vram_temp = true;
     bool show_gpu_vram = true;
     bool show_gpu_clock = true;
     bool show_gpu_power = false;
 
     bool show_cpu_usage = true;
+    bool show_cpu_temp = true;
+    bool show_cpu_power = true;
+    bool show_cpu_per_core = false;
     bool show_system_ram = true;
     bool show_pagefile = true;
     bool show_secondary_apps = true;
+
+    // Bottleneck Indicator
+    bool show_bottleneck_indicator = true;
+    std::string color_bottleneck = "FF3B30";
+
+    // System Integration & Tray (MSI Afterburner MAX)
+    bool minimize_to_tray_on_close = true;
+    bool show_tray_temperature = true;
+    bool tray_temp_is_gpu = true;
+    bool autostart_with_windows = false;
+    bool start_minimized_to_tray = false;
 };
 
 struct HotkeyConfig {

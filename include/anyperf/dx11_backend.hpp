@@ -44,6 +44,18 @@ public:
 
     void handle_resize(UINT width, UINT height);
 
+    void set_tray_manager(class TrayManager* tm) { tray_manager_ = tm; }
+    class TrayManager* get_tray_manager() const { return tray_manager_; }
+
+    bool should_minimize_to_tray_on_close() const { return minimize_to_tray_on_close_; }
+    void set_minimize_to_tray_on_close(bool v) { minimize_to_tray_on_close_ = v; }
+
+    bool has_quit_requested() const { return quit_requested_; }
+    void request_exit() { quit_requested_ = true; }
+
+    bool has_restart_requested() const { return restart_requested_; }
+    void request_restart() { restart_requested_ = true; }
+
 private:
     bool create_device_and_swapchain();
     void create_render_target();
@@ -64,6 +76,11 @@ private:
     OverlayMode current_mode_ = OverlayMode::Dashboard;
     AppFonts fonts_;
     bool is_initialized_ = false;
+
+    class TrayManager* tray_manager_ = nullptr;
+    bool minimize_to_tray_on_close_ = true;
+    bool quit_requested_ = false;
+    bool restart_requested_ = false;
 };
 
 } // namespace anyperf

@@ -1,4 +1,5 @@
 #include "anyperf/rtss_bridge.hpp"
+#include "anyperf/bottleneck_analyzer.hpp"
 #include "anyperf/utils.hpp"
 #include <sstream>
 #include <iomanip>
@@ -537,6 +538,7 @@ bool RTSSBridge::get_rtss_frame_stats(FrameStats& out_stats) const {
 bool RTSSBridge::update_osd(
     const ProcessMonitor& proc_mon,
     const GpuMetrics& gpu,
+    const CpuMetrics& cpu,
     const FrameStats& frames,
     const ConfigManager& config_mgr,
     bool is_benchmarking,
@@ -562,7 +564,7 @@ bool RTSSBridge::update_osd(
     gpu_history_.push_back(static_cast<float>(gpu.core_usage_percent));
     if (gpu_history_.size() > 64) gpu_history_.erase(gpu_history_.begin());
 
-    cpu_history_.push_back(static_cast<float>(primary && primary->is_alive ? primary->cpu_percent : 0.0));
+    cpu_history_.push_back(static_cast<float>(primary && primary->is_alive ? primary->cpu_percent : static_cast<float>(cpu.total_usage_percent)));
     if (cpu_history_.size() > 64) cpu_history_.erase(cpu_history_.begin());
 
     float ram_gb = static_cast<float>(proc_mon.get_system_ram_used()) / (1024.0f * 1024.0f * 1024.0f);
@@ -595,7 +597,10 @@ bool RTSSBridge::update_osd(
             ss << "<C=" << col_gpu << ">" << gpu_name << " : <C><C=" << col_val << ">";
             if (hud.show_gpu_usage) ss << gpu.core_usage_percent << "% ";
             if (hud.show_gpu_temp && gpu.temperature_c > 0) ss << "| " << gpu.temperature_c << " C ";
+            if (hud.show_gpu_hotspot && gpu.hotspot_temp_c > 0) ss << "| Hotspot: " << gpu.hotspot_temp_c << " C ";
+            if (hud.show_gpu_vram_temp && gpu.vram_temp_c > 0) ss << "| VRAM: " << gpu.vram_temp_c << " C ";
             if (hud.show_gpu_clock && gpu.core_clock_mhz > 0) ss << "| " << gpu.core_clock_mhz << " MHz ";
+            if (hud.show_gpu_power && gpu.power_watts > 0) ss << "| " << gpu.power_watts << " W ";
             if (hud.show_gpu_vram) {
                 float vram_used_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);
                 float vram_tot_mb = static_cast<float>(gpu.vram_total_bytes) / (1024.0f * 1024.0f);
@@ -626,14 +631,30 @@ bool RTSSBridge::update_osd(
             ss << "<C=" << col_cpu << ">" << cpu_name << " : <C><C=" << col_val << ">";
             if (primary && primary->is_alive) {
                 ss << std::fixed << std::setprecision(1) << primary->cpu_percent << "% ";
+                if (hud.show_cpu_temp && cpu.package_temp_c > 0) ss << "| " << cpu.package_temp_c << " C ";
+                if (hud.show_cpu_power && cpu.package_power_w > 0) ss << "| " << cpu.package_power_w << " W ";
                 if (primary->cpu_percent < 0.05) {
                     ss << "[IDLE] ";
                 }
                 ss << "(" << wide_to_utf8(primary->name) << ")";
             } else {
-                ss << "Idle";
+                ss << std::fixed << std::setprecision(1) << cpu.total_usage_percent << "% ";
+                if (hud.show_cpu_temp && cpu.package_temp_c > 0) ss << "| " << cpu.package_temp_c << " C ";
+                if (hud.show_cpu_power && cpu.package_power_w > 0) ss << "| " << cpu.package_power_w << " W ";
+                ss << "[Total]";
             }
             ss << "<C>\n";
+
+            if (hud.show_cpu_per_core && !cpu.per_core_usage.empty()) {
+                ss << "<C=" << col_cpu << ">Cores : <C><C=" << col_val << ">";
+                for (size_t c = 0; c < cpu.per_core_usage.size() && c < 8; ++c) {
+                    ss << "C" << c << ":" << static_cast<int>(cpu.per_core_usage[c]) << "% ";
+                }
+                if (cpu.per_core_usage.size() > 8) {
+                    ss << "...";
+                }
+                ss << "<C>\n";
+            }
         }
         if (hud.mode_cpu == SensorDisplayMode::GraphOnly || hud.mode_cpu == SensorDisplayMode::TextAndGraph) {
             DWORD graph_offset = dwBufferOffset;
@@ -745,6 +766,21 @@ bool RTSSBridge::update_osd(
             ss << "<C=FF9100>App Tax : <C><C=FF3D00>+"
                << std::fixed << std::setprecision(1) << total_sec_cpu << "% CPU | "
                << static_cast<int>(total_sec_ram) << " MB RAM<C>\n";
+        }
+    }
+
+    // 8. Live Bottleneck Hardware Indicator (MSI Afterburner MAX)
+    if (hud.show_bottleneck_indicator) {
+        BottleneckInfo bInfo = detect_bottleneck(
+            gpu,
+            cpu,
+            frames.current_fps,
+            proc_mon.get_system_ram_used(),
+            proc_mon.get_system_ram_total()
+        );
+        if (bInfo.type != BottleneckType::None) {
+            std::string b_col = hud.color_bottleneck.empty() ? "FF3B30" : hud.color_bottleneck;
+            ss << "<C=" << b_col << "><S=105>[LIMIT: " << bInfo.description << "]<S><C>\n";
         }
     }
 

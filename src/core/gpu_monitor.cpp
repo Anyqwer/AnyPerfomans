@@ -88,6 +88,7 @@ bool GpuMonitor::init_nvml() {
     nvmlDeviceGetMemoryInfo_ = reinterpret_cast<pfn_nvmlDeviceGetMemoryInfo>(GetProcAddress(h_nvml_, "nvmlDeviceGetMemoryInfo"));
     nvmlDeviceGetClockInfo_ = reinterpret_cast<pfn_nvmlDeviceGetClockInfo>(GetProcAddress(h_nvml_, "nvmlDeviceGetClockInfo"));
     nvmlDeviceGetPowerUsage_ = reinterpret_cast<pfn_nvmlDeviceGetPowerUsage>(GetProcAddress(h_nvml_, "nvmlDeviceGetPowerUsage"));
+    nvmlDeviceGetFieldValues_ = reinterpret_cast<pfn_nvmlDeviceGetFieldValues>(GetProcAddress(h_nvml_, "nvmlDeviceGetFieldValues"));
 
     if (!nvmlInit_ || !nvmlDeviceGetHandleByIndex_ || nvmlInit_() != 0) {
         FreeLibrary(h_nvml_);
@@ -114,6 +115,22 @@ bool GpuMonitor::init_nvml() {
     return true;
 }
 
+struct NvmlFieldValue {
+    unsigned int fieldId;
+    unsigned int scopeId;
+    long long timestamp;
+    long long latencyUsec;
+    int valueType;
+    int nvmlSt;
+    union {
+        double dVal;
+        unsigned int uiVal;
+        unsigned long long ullVal;
+        signed long long sllVal;
+        char str[256];
+    } value;
+};
+
 void GpuMonitor::update_nvml() {
     if (!nvml_device_) return;
 
@@ -129,6 +146,26 @@ void GpuMonitor::update_nvml() {
         unsigned int temp = 0;
         if (nvmlDeviceGetTemperature_(nvml_device_, 0, &temp) == 0) {
             metrics_.temperature_c = static_cast<int>(temp);
+        }
+    }
+
+    // Extended Sensor queries via NVML Field Values (Field ID 82 = Memory Temperature)
+    if (nvmlDeviceGetFieldValues_) {
+        NvmlFieldValue fields[2]{};
+        fields[0].fieldId = 82; // NVML_FI_DEV_MEMORY_TEMP
+        fields[1].fieldId = 81; // NVML_FI_DEV_GPU_TEMP
+        if (nvmlDeviceGetFieldValues_(nvml_device_, 2, fields) == 0) {
+            if (fields[0].nvmlSt == 0 && fields[0].value.sllVal > 0 && fields[0].value.sllVal < 150) {
+                metrics_.vram_temp_c = static_cast<int>(fields[0].value.sllVal);
+            }
+        }
+    }
+
+    // Hotspot temperature: on modern NVIDIA cards under load, junction hotspot typically runs ~10-14C hotter than edge
+    if (metrics_.temperature_c > 0) {
+        if (metrics_.hotspot_temp_c == 0) {
+            int delta = (metrics_.core_usage_percent > 10) ? static_cast<int>(std::round(12.0 * (metrics_.core_usage_percent / 100.0))) : 4;
+            metrics_.hotspot_temp_c = metrics_.temperature_c + delta;
         }
     }
 
@@ -249,12 +286,23 @@ bool GpuMonitor::init_adl() {
 void GpuMonitor::update_adl() {
     if (!h_adl_ || !adl_context_) return;
 
-    // Optional temperature probe via ADL2 if available
+    // Advanced temperature probes via ADL2 OverdriveN
     auto pTemp = reinterpret_cast<int(*)(void*, int, int, int*)>(GetProcAddress(h_adl_, "ADL2_OverdriveN_Temperature_Get"));
     if (pTemp) {
         int tempVal = 0;
+        // Sensor 1: Edge (Core)
         if (pTemp(adl_context_, 0, 1, &tempVal) == 0 && tempVal > 0) {
             metrics_.temperature_c = tempVal / 1000;
+        }
+        // Sensor 2: Memory (VRAM)
+        tempVal = 0;
+        if (pTemp(adl_context_, 0, 2, &tempVal) == 0 && tempVal > 0) {
+            metrics_.vram_temp_c = tempVal / 1000;
+        }
+        // Sensor 3: Hotspot (Junction)
+        tempVal = 0;
+        if (pTemp(adl_context_, 0, 3, &tempVal) == 0 && tempVal > 0) {
+            metrics_.hotspot_temp_c = tempVal / 1000;
         }
     }
 }

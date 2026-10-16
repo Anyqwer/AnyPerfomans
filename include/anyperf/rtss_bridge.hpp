@@ -2,6 +2,7 @@
 
 #include "anyperf/types.hpp"
 #include "anyperf/gpu_monitor.hpp"
+#include "anyperf/cpu_monitor.hpp"
 #include "anyperf/config_manager.hpp"
 #include "anyperf/process_monitor.hpp"
 #include <windows.h>
@@ -38,6 +39,7 @@ public:
     bool update_osd(
         const ProcessMonitor& proc_mon,
         const GpuMetrics& gpu,
+        const CpuMetrics& cpu,
         const FrameStats& frames,
         const ConfigManager& config_mgr,
         bool is_benchmarking,
