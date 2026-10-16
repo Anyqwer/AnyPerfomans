@@ -1100,15 +1100,15 @@ void DashboardView::render_overclock_tab(
 
     ImGui::Spacing();
 
-    // Vendor-specific Safe Slider Limits (matching MSI Afterburner)
-    int min_core = is_amd ? -300 : -500;
-    int max_core = is_amd ? 300 : 500;
-    int min_mem = is_amd ? -500 : -1000;
-    int max_mem = is_amd ? 250 : 2000;      // AMD GDDR6 driver limits max memory offset to ~+250 MHz
+    // Vendor-specific Safe Slider Limits (matching MSI Afterburner & hardware VBIOS)
+    int min_core = is_amd ? (hw_ctrl.has_amd_od8() ? (hw_ctrl.get_amd_min_core_mhz() - hw_ctrl.get_amd_def_core_mhz()) : -300) : -500;
+    int max_core = is_amd ? (hw_ctrl.has_amd_od8() ? (hw_ctrl.get_amd_max_core_mhz() - hw_ctrl.get_amd_def_core_mhz()) : 300) : 500;
+    int min_mem = is_amd ? (hw_ctrl.has_amd_od8() ? (hw_ctrl.get_amd_min_mem_mhz() - hw_ctrl.get_amd_def_mem_mhz()) : -500) : -1000;
+    int max_mem = is_amd ? (hw_ctrl.has_amd_od8() ? (hw_ctrl.get_amd_max_mem_mhz() - hw_ctrl.get_amd_def_mem_mhz()) : 250) : 2000;
     int min_power = 50;
-    int max_power = is_amd ? 120 : 130;     // AMD power slider is -50% to +20%
-    int min_volt = is_amd ? -150 : -100;    // Allows true undervolting down to -150 mV
-    int max_volt = is_amd ? 50 : 100;
+    int max_power = is_amd ? (hw_ctrl.has_amd_od8() ? (100 + hw_ctrl.get_amd_max_power_pct()) : 120) : 130;
+    int min_volt = is_amd ? (hw_ctrl.has_amd_od8() ? (hw_ctrl.get_amd_min_volt_mv() - hw_ctrl.get_amd_def_volt_mv()) : -150) : -100;
+    int max_volt = is_amd ? (hw_ctrl.has_amd_od8() ? (hw_ctrl.get_amd_max_volt_mv() - hw_ctrl.get_amd_def_volt_mv()) : 50) : 100;
 
     // Sanitize any existing config values if they exceed safe vendor limits
     if (oc_cfg.memory_clock_offset_mhz > max_mem) oc_cfg.memory_clock_offset_mhz = max_mem;
@@ -1119,10 +1119,24 @@ void DashboardView::render_overclock_tab(
     if (oc_cfg.voltage_offset_mv > max_volt) oc_cfg.voltage_offset_mv = max_volt;
     if (oc_cfg.voltage_offset_mv < min_volt) oc_cfg.voltage_offset_mv = min_volt;
 
-    ImGui::Text("Core Clock Offset (MHz): %+d MHz", oc_cfg.core_clock_offset_mhz);
+    if (is_amd && hw_ctrl.has_amd_od8()) {
+        ImGui::Text("Core Clock Offset (MHz): %+d MHz (Stock: %d MHz -> Target: %d MHz, Max VBIOS: %d MHz)",
+                    oc_cfg.core_clock_offset_mhz, hw_ctrl.get_amd_def_core_mhz(),
+                    std::clamp(hw_ctrl.get_amd_def_core_mhz() + oc_cfg.core_clock_offset_mhz, hw_ctrl.get_amd_min_core_mhz(), hw_ctrl.get_amd_max_core_mhz()),
+                    hw_ctrl.get_amd_max_core_mhz());
+    } else {
+        ImGui::Text("Core Clock Offset (MHz): %+d MHz", oc_cfg.core_clock_offset_mhz);
+    }
     ImGui::SliderInt("##CoreOffset", &oc_cfg.core_clock_offset_mhz, min_core, max_core, "%+d MHz");
 
-    ImGui::Text("Memory Clock Offset (MHz): %+d MHz %s", oc_cfg.memory_clock_offset_mhz, is_amd ? "(Safe GDDR6 Limit: +250 MHz)" : "");
+    if (is_amd && hw_ctrl.has_amd_od8()) {
+        ImGui::Text("Memory Clock Offset (MHz): %+d MHz (Stock: %d MHz -> Target: %d MHz, Max VBIOS: %d MHz)",
+                    oc_cfg.memory_clock_offset_mhz, hw_ctrl.get_amd_def_mem_mhz(),
+                    std::clamp(hw_ctrl.get_amd_def_mem_mhz() + oc_cfg.memory_clock_offset_mhz, hw_ctrl.get_amd_min_mem_mhz(), hw_ctrl.get_amd_max_mem_mhz()),
+                    hw_ctrl.get_amd_max_mem_mhz());
+    } else {
+        ImGui::Text("Memory Clock Offset (MHz): %+d MHz %s", oc_cfg.memory_clock_offset_mhz, is_amd ? "(Safe GDDR6 Limit: +250 MHz)" : "");
+    }
     ImGui::SliderInt("##MemOffset", &oc_cfg.memory_clock_offset_mhz, min_mem, max_mem, "%+d MHz");
 
     ImGui::Text("Power Limit (%%): %d%% (Range: %d%% - %d%%)", oc_cfg.power_limit_pct, min_power, max_power);
@@ -1132,27 +1146,51 @@ void DashboardView::render_overclock_tab(
     ImGui::SliderInt("##TempLimit", &oc_cfg.temp_limit_c, 65, 90, "%d C");
 
     const char* volt_tag = (oc_cfg.voltage_offset_mv < 0) ? "[UNDERVOLT - Cooler & Quiet]" : (oc_cfg.voltage_offset_mv > 0 ? "[OVERVOLT]" : "[STOCK VBIOS]");
-    ImGui::Text("Core Voltage Offset / Undervolt (mV): %+d mV %s", oc_cfg.voltage_offset_mv, volt_tag);
+    if (is_amd && hw_ctrl.has_amd_od8()) {
+        ImGui::Text("Core Voltage Offset / Undervolt (mV): %+d mV (Stock: %d mV -> Target: %d mV) %s",
+                    oc_cfg.voltage_offset_mv, hw_ctrl.get_amd_def_volt_mv(),
+                    std::clamp(hw_ctrl.get_amd_def_volt_mv() + oc_cfg.voltage_offset_mv, hw_ctrl.get_amd_min_volt_mv(), hw_ctrl.get_amd_max_volt_mv()),
+                    volt_tag);
+    } else {
+        ImGui::Text("Core Voltage Offset / Undervolt (mV): %+d mV %s", oc_cfg.voltage_offset_mv, volt_tag);
+    }
     ImGui::SliderInt("##VoltOffset", &oc_cfg.voltage_offset_mv, min_volt, max_volt, "%+d mV");
 
     ImGui::Spacing();
 
     ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "VOLTAGE-FREQUENCY (V/F) CURVE EDITOR (Interactive Undervolt):");
     if (ImPlot::BeginPlot("##VfCurvePlot", ImVec2(-1, 200.0f * s), ImPlotFlags_NoTitle | ImPlotFlags_NoBoxSelect)) {
-        ImPlot::SetupAxes("Core Voltage (mV)", "Frequency Offset (MHz)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
-        ImPlot::SetupAxesLimits(650.0, 1150.0, -150.0, 300.0, ImPlotCond_Always);
+        if (is_amd && hw_ctrl.has_amd_od8()) {
+            ImPlot::SetupAxes("Core Voltage (mV)", "Core Clock (MHz)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
+            ImPlot::SetupAxesLimits(650.0, 1100.0, 700.0, 1900.0, ImPlotCond_Always);
 
-        std::vector<double> v_xs, v_ys;
-        for (const auto& vf : oc_cfg.vf_curve_points) {
-            v_xs.push_back(static_cast<double>(vf.voltage_mv + oc_cfg.voltage_offset_mv));
-            v_ys.push_back(static_cast<double>(vf.freq_offset_mhz + oc_cfg.core_clock_offset_mhz));
+            double target_core = std::clamp(hw_ctrl.get_amd_def_core_mhz() + oc_cfg.core_clock_offset_mhz, hw_ctrl.get_amd_min_core_mhz(), hw_ctrl.get_amd_max_core_mhz());
+            double target_volt = std::clamp(hw_ctrl.get_amd_def_volt_mv() + oc_cfg.voltage_offset_mv, hw_ctrl.get_amd_min_volt_mv(), hw_ctrl.get_amd_max_volt_mv());
+
+            std::vector<double> v_xs = { 695.0, 776.0, target_volt };
+            std::vector<double> v_ys = { 800.0, 1290.0, target_core };
+
+            ImPlot::SetNextLineStyle(ImVec4(0.00f, 0.90f, 0.60f, 1.0f), 2.5f);
+            ImPlot::PlotLine("RDNA V/F Curve", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
+
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Square, 6.0f, ImVec4(0.00f, 0.90f, 1.00f, 1.0f), 1.5f, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImPlot::PlotScatter("P-States (P1, P2, P3)", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
+        } else {
+            ImPlot::SetupAxes("Core Voltage (mV)", "Frequency Offset (MHz)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
+            ImPlot::SetupAxesLimits(650.0, 1150.0, -150.0, 300.0, ImPlotCond_Always);
+
+            std::vector<double> v_xs, v_ys;
+            for (const auto& vf : oc_cfg.vf_curve_points) {
+                v_xs.push_back(static_cast<double>(vf.voltage_mv + oc_cfg.voltage_offset_mv));
+                v_ys.push_back(static_cast<double>(vf.freq_offset_mhz + oc_cfg.core_clock_offset_mhz));
+            }
+
+            ImPlot::SetNextLineStyle(ImVec4(0.00f, 0.90f, 0.60f, 1.0f), 2.5f);
+            ImPlot::PlotLine("V/F Curve", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
+
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Square, 5.0f, ImVec4(0.00f, 0.90f, 1.00f, 1.0f), 1.5f, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImPlot::PlotScatter("Nodes", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
         }
-
-        ImPlot::SetNextLineStyle(ImVec4(0.00f, 0.90f, 0.60f, 1.0f), 2.5f);
-        ImPlot::PlotLine("V/F Curve", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
-
-        ImPlot::SetNextMarkerStyle(ImPlotMarker_Square, 5.0f, ImVec4(0.00f, 0.90f, 1.00f, 1.0f), 1.5f, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-        ImPlot::PlotScatter("Nodes", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
 
         ImPlot::EndPlot();
     }

@@ -33,33 +33,31 @@ typedef int (*pfn_ADL2_OverdriveN_PowerLimit_Set)(void*, int, void*);
 #pragma pack(push, 1)
 struct ADLOD8SingleInitSetting {
     int featureID;
-    int supported;
-    int value;
-    int min;
-    int max;
+    int minValue;
+    int maxValue;
     int defaultValue;
 };
 
 struct ADLOD8InitSetting {
     int count;
-    ADLOD8SingleInitSetting od8Setting[64];
-};
-
-struct ADLOD8SingleSetSetting {
-    int featureID;
-    int requested;
-    int reset;
-    int value;
-};
-
-struct ADLOD8SetSetting {
-    int count;
-    ADLOD8SingleSetSetting od8Setting[64];
+    int overdrive8Capabilities;
+    ADLOD8SingleInitSetting od8SettingTable[64];
 };
 
 struct ADLOD8CurrentSetting {
     int count;
-    ADLOD8SingleInitSetting od8Setting[64];
+    int Od8SettingTable[64];
+};
+
+struct ADLOD8SingleSetSetting {
+    int value;
+    int requested;
+    int reset;
+};
+
+struct ADLOD8SetSetting {
+    int count;
+    ADLOD8SingleSetSetting od8SettingTable[64];
 };
 #pragma pack(pop)
 
@@ -157,17 +155,32 @@ bool HardwareController::init_adl() {
                     adl_adapter_index_ = adapter;
                     has_adl_od8_ = true;
                     for (int i = 0; i < init_settings.count && i < 64; ++i) {
-                        const auto& s = init_settings.od8Setting[i];
+                        const auto& s = init_settings.od8SettingTable[i];
                         if (i == 0) { // OD8_GFXCLK_FMAX
                             adl_od8_def_core_mhz_ = s.defaultValue;
-                            adl_od8_max_core_mhz_ = s.max;
+                            adl_od8_max_core_mhz_ = s.maxValue;
+                            adl_od8_min_core_mhz_ = s.minValue;
+                        } else if (i == 1) { // OD8_GFXCLK_FMIN
+                            adl_od8_min_core_mhz_ = s.defaultValue;
+                        } else if (i == 2) { // OD8_GFXCLK_FREQ1
+                            adl_od8_p1_freq_mhz_ = s.defaultValue;
+                        } else if (i == 3) { // OD8_GFXCLK_VOLTAGE1
+                            adl_od8_p1_volt_mv_ = s.defaultValue;
+                        } else if (i == 4) { // OD8_GFXCLK_FREQ2
+                            adl_od8_p2_freq_mhz_ = s.defaultValue;
+                        } else if (i == 5) { // OD8_GFXCLK_VOLTAGE2
+                            adl_od8_p2_volt_mv_ = s.defaultValue;
                         } else if (i == 7) { // OD8_GFXCLK_VOLTAGE3 (Peak operating voltage)
                             adl_od8_def_volt_mv_ = s.defaultValue;
-                            adl_od8_min_volt_mv_ = s.min;
-                            adl_od8_max_volt_mv_ = s.max;
+                            adl_od8_min_volt_mv_ = s.minValue;
+                            adl_od8_max_volt_mv_ = s.maxValue;
                         } else if (i == 8) { // OD8_UCLK_FMAX (Memory clock)
                             adl_od8_def_mem_mhz_ = s.defaultValue;
-                            adl_od8_max_mem_mhz_ = s.max;
+                            adl_od8_min_mem_mhz_ = s.minValue;
+                            adl_od8_max_mem_mhz_ = s.maxValue;
+                        } else if (i == 9) { // OD8_POWER_PERCENTAGE
+                            adl_od8_min_power_pct_ = s.minValue;
+                            adl_od8_max_power_pct_ = s.maxValue;
                         }
                     }
                     break;
@@ -479,44 +492,43 @@ bool HardwareController::apply_overclock(const OverclockConfig& oc) {
             cur.count = 64;
             if (pCurOD8(adl_context_, adl_adapter_index_, &cur) == 0 && cur.count > 0) {
                 ADLOD8SetSetting set_req{};
-                set_req.count = cur.count;
-                for (int i = 0; i < cur.count && i < 64; ++i) {
-                    set_req.od8Setting[i].featureID = cur.od8Setting[i].featureID;
-                    set_req.od8Setting[i].requested = 0;
-                    set_req.od8Setting[i].reset = 0;
-                    set_req.od8Setting[i].value = cur.od8Setting[i].value;
+                set_req.count = 64;
+                for (int i = 0; i < 64; ++i) {
+                    set_req.od8SettingTable[i].value = cur.Od8SettingTable[i];
+                    set_req.od8SettingTable[i].requested = 0;
+                    set_req.od8SettingTable[i].reset = 0;
                 }
 
                 // Compute target frequencies & voltage based on factory defaults + user offset
-                int target_core = std::clamp(adl_od8_def_core_mhz_ + oc.core_clock_offset_mhz, 800, adl_od8_max_core_mhz_);
+                int target_core = std::clamp(adl_od8_def_core_mhz_ + oc.core_clock_offset_mhz, adl_od8_min_core_mhz_, adl_od8_max_core_mhz_);
                 int target_volt = std::clamp(adl_od8_def_volt_mv_ + oc.voltage_offset_mv, adl_od8_min_volt_mv_, adl_od8_max_volt_mv_);
-                int target_mem = std::clamp(adl_od8_def_mem_mhz_ + oc.memory_clock_offset_mhz, 1750, adl_od8_max_mem_mhz_);
-                int power_offset = std::clamp(oc.power_limit_pct - 100, -50, 20);
+                int target_mem = std::clamp(adl_od8_def_mem_mhz_ + oc.memory_clock_offset_mhz, adl_od8_min_mem_mhz_, adl_od8_max_mem_mhz_);
+                int power_offset = std::clamp(oc.power_limit_pct - 100, adl_od8_min_power_pct_, adl_od8_max_power_pct_);
 
                 // Feature 1: GFXCLK Fmax & Fmin
-                set_req.od8Setting[0].value = target_core;
-                set_req.od8Setting[0].requested = 1;
-                set_req.od8Setting[1].value = 800; // Stock Fmin
-                set_req.od8Setting[1].requested = 1;
+                set_req.od8SettingTable[0].value = target_core;
+                set_req.od8SettingTable[0].requested = 1;
+                set_req.od8SettingTable[1].value = adl_od8_min_core_mhz_;
+                set_req.od8SettingTable[1].requested = 1;
 
                 // Feature 2: 3-point V/F curve (All 6 points must be requested together)
                 for (int i = 2; i <= 7; ++i) {
-                    set_req.od8Setting[i].requested = 1;
+                    set_req.od8SettingTable[i].requested = 1;
                 }
-                set_req.od8Setting[2].value = 800;
-                set_req.od8Setting[3].value = 800;
-                set_req.od8Setting[4].value = 1255;
-                set_req.od8Setting[5].value = 841;
-                set_req.od8Setting[6].value = target_core;
-                set_req.od8Setting[7].value = target_volt;
+                set_req.od8SettingTable[2].value = adl_od8_p1_freq_mhz_;
+                set_req.od8SettingTable[3].value = adl_od8_p1_volt_mv_;
+                set_req.od8SettingTable[4].value = adl_od8_p2_freq_mhz_;
+                set_req.od8SettingTable[5].value = adl_od8_p2_volt_mv_;
+                set_req.od8SettingTable[6].value = target_core;
+                set_req.od8SettingTable[7].value = target_volt;
 
                 // Feature 4: Memory clock
-                set_req.od8Setting[8].value = target_mem;
-                set_req.od8Setting[8].requested = 1;
+                set_req.od8SettingTable[8].value = target_mem;
+                set_req.od8SettingTable[8].requested = 1;
 
                 // Feature 8: Power Limit offset %
-                set_req.od8Setting[9].value = power_offset;
-                set_req.od8Setting[9].requested = 1;
+                set_req.od8SettingTable[9].value = power_offset;
+                set_req.od8SettingTable[9].requested = 1;
 
                 ADLOD8CurrentSetting out_cur{};
                 out_cur.count = 64;
@@ -525,7 +537,7 @@ bool HardwareController::apply_overclock(const OverclockConfig& oc) {
                     last_oc_status_ = HardwareOcStatus::FullyApplied;
                     char buf[256];
                     snprintf(buf, sizeof(buf), "AMD Overdrive 8: Applied Core %d MHz, Mem %d MHz, Peak V/F %d mV, Power %+d%%.",
-                             target_core, target_mem, target_volt, power_offset);
+                             out_cur.Od8SettingTable[0], out_cur.Od8SettingTable[8], out_cur.Od8SettingTable[7], out_cur.Od8SettingTable[9]);
                     last_oc_message_ = buf;
                     applied = true;
                 } else {
@@ -602,35 +614,27 @@ bool HardwareController::reset_overclock() {
             cur.count = 64;
             if (pCurOD8(adl_context_, adl_adapter_index_, &cur) == 0 && cur.count > 0) {
                 ADLOD8SetSetting set_req{};
-                set_req.count = cur.count;
-                for (int i = 0; i < cur.count && i < 64; ++i) {
-                    set_req.od8Setting[i].featureID = cur.od8Setting[i].featureID;
-                    set_req.od8Setting[i].requested = 0;
-                    set_req.od8Setting[i].reset = 0;
-                    set_req.od8Setting[i].value = cur.od8Setting[i].value;
+                set_req.count = 64;
+                for (int i = 0; i < 64; ++i) {
+                    set_req.od8SettingTable[i].value = cur.Od8SettingTable[i];
+                    set_req.od8SettingTable[i].requested = 0;
+                    set_req.od8SettingTable[i].reset = 0;
                 }
 
                 // Restore factory defaults
-                set_req.od8Setting[0].value = adl_od8_def_core_mhz_;
-                set_req.od8Setting[0].requested = 1;
-                set_req.od8Setting[1].value = 800;
-                set_req.od8Setting[1].requested = 1;
-
-                for (int i = 2; i <= 7; ++i) {
-                    set_req.od8Setting[i].requested = 1;
+                for (int i = 0; i <= 9; ++i) {
+                    set_req.od8SettingTable[i].requested = 1;
                 }
-                set_req.od8Setting[2].value = 800;
-                set_req.od8Setting[3].value = 800;
-                set_req.od8Setting[4].value = 1255;
-                set_req.od8Setting[5].value = 841;
-                set_req.od8Setting[6].value = adl_od8_def_core_mhz_;
-                set_req.od8Setting[7].value = adl_od8_def_volt_mv_;
-
-                set_req.od8Setting[8].value = adl_od8_def_mem_mhz_;
-                set_req.od8Setting[8].requested = 1;
-
-                set_req.od8Setting[9].value = 0; // 0% power limit offset
-                set_req.od8Setting[9].requested = 1;
+                set_req.od8SettingTable[0].value = adl_od8_def_core_mhz_;
+                set_req.od8SettingTable[1].value = adl_od8_min_core_mhz_;
+                set_req.od8SettingTable[2].value = adl_od8_p1_freq_mhz_;
+                set_req.od8SettingTable[3].value = adl_od8_p1_volt_mv_;
+                set_req.od8SettingTable[4].value = adl_od8_p2_freq_mhz_;
+                set_req.od8SettingTable[5].value = adl_od8_p2_volt_mv_;
+                set_req.od8SettingTable[6].value = adl_od8_def_core_mhz_;
+                set_req.od8SettingTable[7].value = adl_od8_def_volt_mv_;
+                set_req.od8SettingTable[8].value = adl_od8_def_mem_mhz_;
+                set_req.od8SettingTable[9].value = 0; // 0% power limit offset
 
                 ADLOD8CurrentSetting out_cur{};
                 out_cur.count = 64;
