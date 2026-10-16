@@ -425,9 +425,17 @@ bool RTSSBridge::write_to_shared_memory(const char* text, const BYTE* graph_buff
                     return false;
                 }
 
-                // 1. Write extended formatted OSD
+                // 1. Write extended formatted OSD if supported (RTSS v2.7+)
                 if (pHeader->dwVersion >= 0x00020007) {
                     strncpy_s(pEntry->szOSDEx, sizeof(pEntry->szOSDEx), text, sizeof(pEntry->szOSDEx) - 1);
+                    // Crucial: Clear szOSD legacy slot!
+                    // RTSS renders BOTH szOSD (in default green) and szOSDEx if both are populated.
+                    // Leaving szOSD populated causes the exact text to be rendered twice!
+                    pEntry->szOSD[0] = '\0';
+                } else {
+                    // Universal fallback for ancient RTSS < 2.7
+                    strncpy_s(pEntry->szOSD, sizeof(pEntry->szOSD), clean_text.c_str(), sizeof(pEntry->szOSD) - 1);
+                    pEntry->szOSDEx[0] = '\0';
                 }
 
                 // 2. Write embedded graphs buffer
@@ -435,8 +443,19 @@ bool RTSSBridge::write_to_shared_memory(const char* text, const BYTE* graph_buff
                     memcpy(pEntry->buffer, graph_buffer, min(graph_buffer_size, (DWORD)sizeof(pEntry->buffer)));
                 }
 
-                // 3. Write universal fallback OSD (unformatted clean text for legacy renderers)
-                strncpy_s(pEntry->szOSD, sizeof(pEntry->szOSD), clean_text.c_str(), sizeof(pEntry->szOSD) - 1);
+                // 3. Clean up any extra orphaned slots that might have been marked with our owner tag
+                for (DWORD other_idx = 0; other_idx < pHeader->dwOSDArrSize; ++other_idx) {
+                    if (other_idx != entry) {
+                        auto* pOther = reinterpret_cast<RTSS_OSD_SLOT*>(
+                            reinterpret_cast<LPBYTE>(pHeader) + pHeader->dwOSDArrOffset + other_idx * pHeader->dwOSDEntrySize
+                        );
+                        if (strcmp(pOther->szOSDOwner, "AnyPerfomans") == 0) {
+                            pOther->szOSD[0] = '\0';
+                            pOther->szOSDEx[0] = '\0';
+                            pOther->szOSDOwner[0] = '\0';
+                        }
+                    }
+                }
 
                 if (pHeader->dwVersion >= 0x0002000E) {
                     pHeader->dwBusy = 0;
@@ -469,7 +488,6 @@ void RTSSBridge::clear_osd() {
             pEntry->szOSDEx[0] = '\0';
             pEntry->szOSDOwner[0] = '\0';
             pHeader->dwOSDFrame++;
-            break;
         }
     }
 }
