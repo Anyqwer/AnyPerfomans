@@ -47,6 +47,15 @@ struct HudConfig {
     std::string label_fps = "FPS";
     std::string label_frametime = "FT";
 
+    // Custom Sensor Colors (Hex RRGGBB strings for RTSS OSD & HUD)
+    std::string color_gpu = "00E5FF";       // Cyan
+    std::string color_cpu = "5CC8FF";       // Light Blue
+    std::string color_ram = "FFB300";       // Amber / Gold
+    std::string color_fps = "00E676";       // Neon Green
+    std::string color_frametime = "00E676"; // Neon Green
+    std::string color_values = "FFFFFF";    // Crisp White
+    std::string color_stutter = "FF1744";   // Alert Red
+
     // RTSS Embedded Line Graph Settings
     bool rtss_graph_filled = false;         // false = clean sharp line graph (User requested!), true = filled
     int rtss_graph_width = -32;             // Width in characters (-32 chars wide)

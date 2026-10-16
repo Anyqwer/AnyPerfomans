@@ -474,6 +474,48 @@ void RTSSBridge::clear_osd() {
     }
 }
 
+bool RTSSBridge::get_rtss_frame_stats(FrameStats& out_stats) const {
+    if (!is_connected_ || !map_addr_) return false;
+
+    auto* pHeader = reinterpret_cast<RTSS_HEADER*>(map_addr_);
+    if (!pHeader || !is_rtss_signature_valid(pHeader->dwSignature)) return false;
+
+    if (pHeader->dwVersion >= 0x00020010 && pHeader->dwLastForegroundAppProcessID != 0) {
+        if (pHeader->dwLastForegroundApp < pHeader->dwAppArrSize) {
+            auto* pApp = reinterpret_cast<RTSS_APP_SLOT*>(
+                reinterpret_cast<LPBYTE>(pHeader) + pHeader->dwAppArrOffset + pHeader->dwLastForegroundApp * pHeader->dwAppEntrySize
+            );
+
+            double fps = 0.0;
+            if (pApp->dwTime1 > pApp->dwTime0 && pApp->dwFrames > 0) {
+                double duration_ms = static_cast<double>(pApp->dwTime1 - pApp->dwTime0);
+                fps = (1000.0 * static_cast<double>(pApp->dwFrames)) / duration_ms;
+            } else if (pApp->dwFrameTime > 0) {
+                fps = 1000000.0 / static_cast<double>(pApp->dwFrameTime);
+            }
+
+            double ft_ms = 0.0;
+            if (pApp->dwFrameTime > 0) {
+                ft_ms = static_cast<double>(pApp->dwFrameTime) / 1000.0;
+            }
+
+            // Filter out unrealistic present anomalies (> 2000 FPS)
+            if (fps > 2000.0) {
+                fps = 0.0;
+                ft_ms = 0.0;
+            }
+
+            if (fps > 0.1) {
+                out_stats.current_fps = fps;
+                out_stats.frametime_ms = ft_ms;
+                out_stats.total_frames = pApp->dwFrames;
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 bool RTSSBridge::update_osd(
     const ProcessMonitor& proc_mon,
     const GpuMetrics& gpu,
@@ -487,6 +529,15 @@ bool RTSSBridge::update_osd(
         clear_osd();
         return false;
     }
+
+    // Colors
+    const std::string& col_gpu = hud.color_gpu.empty() ? "00E5FF" : hud.color_gpu;
+    const std::string& col_cpu = hud.color_cpu.empty() ? "5CC8FF" : hud.color_cpu;
+    const std::string& col_ram = hud.color_ram.empty() ? "FFB300" : hud.color_ram;
+    const std::string& col_fps = hud.color_fps.empty() ? "00E676" : hud.color_fps;
+    const std::string& col_ft = hud.color_frametime.empty() ? "00E676" : hud.color_frametime;
+    const std::string& col_val = hud.color_values.empty() ? "FFFFFF" : hud.color_values;
+    const std::string& col_stut = hud.color_stutter.empty() ? "FF1744" : hud.color_stutter;
 
     // Maintain history buffers for graphs
     const auto* primary = proc_mon.get_primary_target();
@@ -510,7 +561,7 @@ bool RTSSBridge::update_osd(
         int mins = sec / 60;
         int rem_sec = sec % 60;
 
-        ss << "<C=FF1744><S=105>[REC ";
+        ss << "<C=" << col_stut << "><S=105>[REC ";
         ss << std::setfill('0') << std::setw(2) << mins << ":"
            << std::setfill('0') << std::setw(2) << rem_sec << "] ";
         ss << "AVG: " << std::fixed << std::setprecision(0) << frames.avg_fps << " | "
@@ -523,7 +574,7 @@ bool RTSSBridge::update_osd(
     std::string gpu_name = hud.label_gpu.empty() ? "GPU" : hud.label_gpu;
     if (hud.mode_gpu != SensorDisplayMode::Disabled) {
         if (hud.mode_gpu == SensorDisplayMode::TextOnly || hud.mode_gpu == SensorDisplayMode::TextAndGraph) {
-            ss << "<C=00E5FF>" << gpu_name << " : <C><C=FFFFFF>";
+            ss << "<C=" << col_gpu << ">" << gpu_name << " : <C><C=" << col_val << ">";
             if (hud.show_gpu_usage) ss << gpu.core_usage_percent << "% ";
             if (hud.show_gpu_temp && gpu.temperature_c > 0) ss << "| " << gpu.temperature_c << " C ";
             if (hud.show_gpu_clock && gpu.core_clock_mhz > 0) ss << "| " << gpu.core_clock_mhz << " MHz ";
@@ -545,7 +596,7 @@ bool RTSSBridge::update_osd(
             if (sz > 0) {
                 char obj_tag[32];
                 sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
-                ss << "<C=00E5FF>" << obj_tag << "<C>";
+                ss << "<C=" << col_gpu << ">" << obj_tag << "<C>";
             }
         }
     }
@@ -554,7 +605,7 @@ bool RTSSBridge::update_osd(
     std::string cpu_name = hud.label_cpu.empty() ? "CPU" : hud.label_cpu;
     if (hud.mode_cpu != SensorDisplayMode::Disabled) {
         if (hud.mode_cpu == SensorDisplayMode::TextOnly || hud.mode_cpu == SensorDisplayMode::TextAndGraph) {
-            ss << "<C=5CC8FF>" << cpu_name << " : <C><C=FFFFFF>";
+            ss << "<C=" << col_cpu << ">" << cpu_name << " : <C><C=" << col_val << ">";
             if (primary && primary->is_alive) {
                 ss << std::fixed << std::setprecision(1) << primary->cpu_percent << "% ";
                 if (primary->cpu_percent < 0.05) {
@@ -573,7 +624,7 @@ bool RTSSBridge::update_osd(
             if (sz > 0) {
                 char obj_tag[32];
                 sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
-                ss << "<C=5CC8FF>" << obj_tag << "<C>";
+                ss << "<C=" << col_cpu << ">" << obj_tag << "<C>";
             }
         }
     }
@@ -585,7 +636,7 @@ bool RTSSBridge::update_osd(
         float ram_tot_gb = static_cast<float>(proc_mon.get_system_ram_total()) / (1024.0f * 1024.0f * 1024.0f);
         if (hud.mode_ram == SensorDisplayMode::TextOnly || hud.mode_ram == SensorDisplayMode::TextAndGraph) {
             if (ram_tot_gb > 0.0f) {
-                ss << "<C=FFB300>" << ram_name << " : <C><C=FFFFFF>"
+                ss << "<C=" << col_ram << ">" << ram_name << " : <C><C=" << col_val << ">"
                    << std::fixed << std::setprecision(1) << ram_used_gb << " / "
                    << std::fixed << std::setprecision(1) << ram_tot_gb << " GB";
                 if (hud.show_pagefile) {
@@ -602,7 +653,7 @@ bool RTSSBridge::update_osd(
             if (sz > 0) {
                 char obj_tag[32];
                 sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
-                ss << "<C=FFB300>" << obj_tag << "<C>";
+                ss << "<C=" << col_ram << ">" << obj_tag << "<C>";
             }
         }
     }
@@ -611,8 +662,12 @@ bool RTSSBridge::update_osd(
     std::string fps_name = hud.label_fps.empty() ? "FPS" : hud.label_fps;
     std::string ft_name = hud.label_frametime.empty() ? "FT" : hud.label_frametime;
     if (hud.mode_fps != SensorDisplayMode::Disabled) {
-        ss << "<C=00E676>" << fps_name << " : <C><C=FFFFFF>"
-           << std::fixed << std::setprecision(0) << frames.current_fps;
+        ss << "<C=" << col_fps << ">" << fps_name << " : <C><C=" << col_val << ">";
+        if (frames.current_fps > 0.1) {
+            ss << std::fixed << std::setprecision(0) << frames.current_fps;
+        } else {
+            ss << "Idle";
+        }
 
         if (hud.show_1pct_low && frames.one_percent_low > 0.0) {
             ss << "  (1%: " << std::fixed << std::setprecision(0) << frames.one_percent_low;
@@ -626,11 +681,13 @@ bool RTSSBridge::update_osd(
         }
 
         if (hud.mode_frametime == SensorDisplayMode::TextOnly || hud.mode_frametime == SensorDisplayMode::TextAndGraph) {
-            ss << "  " << ft_name << ": " << std::fixed << std::setprecision(1) << frames.frametime_ms << "ms";
+            if (frames.frametime_ms > 0.0) {
+                ss << "  " << ft_name << ": " << std::fixed << std::setprecision(1) << frames.frametime_ms << "ms";
+            }
         }
 
         if (hud.show_stutters && frames.stutter_count > 0) {
-            ss << "  <C=FF1744>[HITCH: " << frames.stutter_count << "]<C>";
+            ss << "  <C=" << col_stut << ">[HITCH: " << frames.stutter_count << "]<C>";
         }
         ss << "<C>\n";
     }
@@ -644,7 +701,7 @@ bool RTSSBridge::update_osd(
         if (sz > 0) {
             char obj_tag[32];
             sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
-            ss << "<C=00E676>" << obj_tag << "<C>";
+            ss << "<C=" << col_ft << ">" << obj_tag << "<C>";
         }
     }
 
@@ -659,7 +716,7 @@ bool RTSSBridge::update_osd(
             std::string short_name = wide_to_utf8(t.name);
             if (short_name.length() > 10) short_name = short_name.substr(0, 10);
 
-            ss << "<C=FF5577>" << short_name << "<C> : <C=FFFFFF>"
+            ss << "<C=FF5577>" << short_name << "<C> : <C=" << col_val << ">"
                << std::fixed << std::setprecision(1) << t.cpu_percent << "% | "
                << static_cast<int>(ram_mb) << " MB<C>\n";
         }

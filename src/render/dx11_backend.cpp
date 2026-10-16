@@ -238,6 +238,11 @@ void Dx11Backend::set_overlay_mode(OverlayMode mode) {
     if (mode == current_mode_ || !hwnd_) return;
     current_mode_ = mode;
 
+    if (mode == OverlayMode::Hidden) {
+        ShowWindow(hwnd_, SW_HIDE);
+        return;
+    }
+
     if (mode == OverlayMode::MiniHud) {
         // Set transparent click-through topmost window
         LONG_PTR exStyle = GetWindowLongPtrW(hwnd_, GWL_EXSTYLE);
@@ -250,7 +255,7 @@ void Dx11Backend::set_overlay_mode(OverlayMode mode) {
         MARGINS margins = { -1, -1, -1, -1 };
         DwmExtendFrameIntoClientArea(hwnd_, &margins);
 
-        // Position in top-right or desired corner of screen
+        ShowWindow(hwnd_, SW_SHOWNOACTIVATE);
         SetWindowPos(hwnd_, HWND_TOPMOST, 20, 20, 360, 240, SWP_SHOWWINDOW | SWP_FRAMECHANGED);
     } else {
         // Revert to normal windowed dashboard
@@ -261,6 +266,7 @@ void Dx11Backend::set_overlay_mode(OverlayMode mode) {
         MARGINS margins = { 0, 0, 0, 0 };
         DwmExtendFrameIntoClientArea(hwnd_, &margins);
 
+        ShowWindow(hwnd_, SW_SHOW);
         SetWindowPos(hwnd_, HWND_NOTOPMOST, 100, 100, 1280, 800, SWP_SHOWWINDOW | SWP_FRAMECHANGED);
     }
 }

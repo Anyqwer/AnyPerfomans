@@ -24,6 +24,36 @@ static bool stristr_simple(const std::string& haystack, const std::string& needl
     return it != haystack.end();
 }
 
+static ImVec4 hex_to_imvec4(const std::string& hex, float alpha = 1.0f) {
+    if (hex.length() < 6) return ImVec4(1.0f, 1.0f, 1.0f, alpha);
+    unsigned int r = 255, g = 255, b = 255;
+    sscanf_s(hex.c_str(), "%02x%02x%02x", &r, &g, &b);
+    return ImVec4(r / 255.0f, g / 255.0f, b / 255.0f, alpha);
+}
+
+static bool ColorPickerHex(const char* label, std::string& hex_color) {
+    float col[3] = { 1.0f, 1.0f, 1.0f };
+    if (hex_color.length() >= 6) {
+        unsigned int r = 255, g = 255, b = 255;
+        sscanf_s(hex_color.c_str(), "%02x%02x%02x", &r, &g, &b);
+        col[0] = r / 255.0f;
+        col[1] = g / 255.0f;
+        col[2] = b / 255.0f;
+    }
+
+    bool changed = false;
+    if (ImGui::ColorEdit3(label, col, ImGuiColorEditFlags_NoInputs | ImGuiColorEditFlags_NoLabel)) {
+        int r = std::clamp(static_cast<int>(col[0] * 255.0f + 0.5f), 0, 255);
+        int g = std::clamp(static_cast<int>(col[1] * 255.0f + 0.5f), 0, 255);
+        int b = std::clamp(static_cast<int>(col[2] * 255.0f + 0.5f), 0, 255);
+        char hex_buf[8];
+        sprintf_s(hex_buf, "%02X%02X%02X", r, g, b);
+        hex_color = hex_buf;
+        changed = true;
+    }
+    return changed;
+}
+
 DashboardView::DashboardView() {
     cached_proc_list_ = ProcessMonitor::enumerate_processes();
 }
@@ -938,71 +968,100 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
 
     ImGui::Spacing();
 
+    // Global Color Palette
+    ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.85f, 1.0f), "GLOBAL OSD PALETTE:");
+    ColorPickerHex("##ValCol", hud.color_values);
+    ImGui::SameLine();
+    ImGui::Text("Telemetry Numbers / Values");
+
+    ImGui::SameLine(320.0f * fonts.dpi_scale);
+    ColorPickerHex("##StutCol", hud.color_stutter);
+    ImGui::SameLine();
+    ImGui::Text("Stutter Hitch Badge");
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.85f, 1.0f), "INDIVIDUAL SENSOR COLOR, MODE & LABEL:");
+    ImGui::TextDisabled("Select [Color Box], [Display Mode] and [Custom Name] for each telemetry row.");
+    ImGui::Spacing();
+
     // Sensor Customization Table
     const char* mode_names[] = { "Disabled", "Text Only", "Graph Only (Line)", "Text + Graph (Line)" };
     char name_buf[64];
 
     // Sensor 1: Frametime
+    ColorPickerHex("##FTCol", hud.color_frametime);
+    ImGui::SameLine();
     int cur_mode_ft = static_cast<int>(hud.mode_frametime);
-    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
-    if (ImGui::Combo("Frametime Display##FTMode", &cur_mode_ft, mode_names, IM_ARRAYSIZE(mode_names))) {
+    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
+    if (ImGui::Combo("##FTMode", &cur_mode_ft, mode_names, IM_ARRAYSIZE(mode_names))) {
         hud.mode_frametime = static_cast<SensorDisplayMode>(cur_mode_ft);
     }
-    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    ImGui::SameLine();
     strcpy_s(name_buf, hud.label_frametime.c_str());
-    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
-    if (ImGui::InputText("Frametime Label##FTLbl", name_buf, sizeof(name_buf))) {
+    ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
+    if (ImGui::InputText("Frametime Label / Line Graph##FTLbl", name_buf, sizeof(name_buf))) {
         hud.label_frametime = name_buf;
     }
 
     // Sensor 2: FPS / Framerate
+    ColorPickerHex("##FPSCol", hud.color_fps);
+    ImGui::SameLine();
     int cur_mode_fps = static_cast<int>(hud.mode_fps);
-    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
-    if (ImGui::Combo("FPS Display##FPSMode", &cur_mode_fps, mode_names, IM_ARRAYSIZE(mode_names))) {
+    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
+    if (ImGui::Combo("##FPSMode", &cur_mode_fps, mode_names, IM_ARRAYSIZE(mode_names))) {
         hud.mode_fps = static_cast<SensorDisplayMode>(cur_mode_fps);
     }
-    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    ImGui::SameLine();
     strcpy_s(name_buf, hud.label_fps.c_str());
-    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
     if (ImGui::InputText("FPS Label##FPSLbl", name_buf, sizeof(name_buf))) {
         hud.label_fps = name_buf;
     }
 
     // Sensor 3: GPU Core Load
+    ColorPickerHex("##GPUCol", hud.color_gpu);
+    ImGui::SameLine();
     int cur_mode_gpu = static_cast<int>(hud.mode_gpu);
-    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
-    if (ImGui::Combo("GPU Load Display##GPUMode", &cur_mode_gpu, mode_names, IM_ARRAYSIZE(mode_names))) {
+    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
+    if (ImGui::Combo("##GPUMode", &cur_mode_gpu, mode_names, IM_ARRAYSIZE(mode_names))) {
         hud.mode_gpu = static_cast<SensorDisplayMode>(cur_mode_gpu);
     }
-    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    ImGui::SameLine();
     strcpy_s(name_buf, hud.label_gpu.c_str());
-    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
     if (ImGui::InputText("GPU Label##GPULbl", name_buf, sizeof(name_buf))) {
         hud.label_gpu = name_buf;
     }
 
     // Sensor 4: CPU Total Load
+    ColorPickerHex("##CPUCol", hud.color_cpu);
+    ImGui::SameLine();
     int cur_mode_cpu = static_cast<int>(hud.mode_cpu);
-    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
-    if (ImGui::Combo("CPU Load Display##CPUMode", &cur_mode_cpu, mode_names, IM_ARRAYSIZE(mode_names))) {
+    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
+    if (ImGui::Combo("##CPUMode", &cur_mode_cpu, mode_names, IM_ARRAYSIZE(mode_names))) {
         hud.mode_cpu = static_cast<SensorDisplayMode>(cur_mode_cpu);
     }
-    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    ImGui::SameLine();
     strcpy_s(name_buf, hud.label_cpu.c_str());
-    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
     if (ImGui::InputText("CPU Label##CPULbl", name_buf, sizeof(name_buf))) {
         hud.label_cpu = name_buf;
     }
 
     // Sensor 5: System RAM
+    ColorPickerHex("##RAMCol", hud.color_ram);
+    ImGui::SameLine();
     int cur_mode_ram = static_cast<int>(hud.mode_ram);
-    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
-    if (ImGui::Combo("System RAM Display##RAMMode", &cur_mode_ram, mode_names, IM_ARRAYSIZE(mode_names))) {
+    ImGui::SetNextItemWidth(170.0f * fonts.dpi_scale);
+    if (ImGui::Combo("##RAMMode", &cur_mode_ram, mode_names, IM_ARRAYSIZE(mode_names))) {
         hud.mode_ram = static_cast<SensorDisplayMode>(cur_mode_ram);
     }
-    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    ImGui::SameLine();
     strcpy_s(name_buf, hud.label_ram.c_str());
-    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    ImGui::SetNextItemWidth(140.0f * fonts.dpi_scale);
     if (ImGui::InputText("RAM Label##RAMLbl", name_buf, sizeof(name_buf))) {
         hud.label_ram = name_buf;
     }
@@ -1167,12 +1226,13 @@ void DashboardView::render_rtss_mini_hud(
         float pulse = 0.6f + 0.4f * std::sin(static_cast<float>(elapsed * 5.0));
         ImGui::TextColored(ImVec4(1.0f, 0.1f * pulse, 0.15f * pulse, 1.0f), "%s", rec_str);
         ImGui::SameLine();
-        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "Avg: %.0f | 1%%: %.0f", frames.avg_fps, frames.one_percent_low);
+        ImGui::TextColored(hex_to_imvec4(hud.color_values), "Avg: %.0f | 1%%: %.0f", frames.avg_fps, frames.one_percent_low);
     }
 
     // 1. GPU Row
     if (hud.show_gpu_usage || hud.show_gpu_temp || hud.show_gpu_vram || hud.show_gpu_clock) {
-        ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "GPU : ");
+        std::string label = hud.label_gpu.empty() ? "GPU" : hud.label_gpu;
+        ImGui::TextColored(hex_to_imvec4(hud.color_gpu), "%s : ", label.c_str());
         ImGui::SameLine();
         std::stringstream gpu_ss;
         if (hud.show_gpu_usage) gpu_ss << gpu.core_usage_percent << "% ";
@@ -1187,18 +1247,19 @@ void DashboardView::render_rtss_mini_hud(
                 gpu_ss << "| " << static_cast<int>(vram_used_mb) << " MB";
             }
         }
-        ImGui::Text("%s", gpu_ss.str().c_str());
+        ImGui::TextColored(hex_to_imvec4(hud.color_values), "%s", gpu_ss.str().c_str());
     }
 
     // 2. CPU Row
     if (hud.show_cpu_usage) {
         const auto* primary = proc_mon.get_primary_target();
-        ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "CPU : ");
+        std::string label = hud.label_cpu.empty() ? "CPU" : hud.label_cpu;
+        ImGui::TextColored(hex_to_imvec4(hud.color_cpu), "%s : ", label.c_str());
         ImGui::SameLine();
         if (primary && primary->is_alive) {
-            ImGui::Text("%.1f%%  (%s)", primary->cpu_percent, wide_to_utf8(primary->name).c_str());
+            ImGui::TextColored(hex_to_imvec4(hud.color_values), "%.1f%%  (%s)", primary->cpu_percent, wide_to_utf8(primary->name).c_str());
         } else {
-            ImGui::Text("Idle");
+            ImGui::TextColored(hex_to_imvec4(hud.color_values), "Idle");
         }
     }
 
@@ -1206,12 +1267,13 @@ void DashboardView::render_rtss_mini_hud(
     if (hud.show_system_ram) {
         float ram_used_gb = static_cast<float>(proc_mon.get_system_ram_used()) / (1024.0f * 1024.0f * 1024.0f);
         float ram_tot_gb = static_cast<float>(proc_mon.get_system_ram_total()) / (1024.0f * 1024.0f * 1024.0f);
-        ImGui::TextColored(ImVec4(1.00f, 0.70f, 0.00f, 1.0f), "RAM : ");
+        std::string label = hud.label_ram.empty() ? "RAM" : hud.label_ram;
+        ImGui::TextColored(hex_to_imvec4(hud.color_ram), "%s : ", label.c_str());
         ImGui::SameLine();
         if (ram_tot_gb > 0.0f) {
-            ImGui::Text("%.1f / %.1f GB", ram_used_gb, ram_tot_gb);
+            ImGui::TextColored(hex_to_imvec4(hud.color_values), "%.1f / %.1f GB", ram_used_gb, ram_tot_gb);
         } else {
-            ImGui::Text("%.1f GB", ram_used_gb);
+            ImGui::TextColored(hex_to_imvec4(hud.color_values), "%.1f GB", ram_used_gb);
         }
         if (hud.show_pagefile) {
             float page_used_gb = static_cast<float>(proc_mon.get_system_commit_used()) / (1024.0f * 1024.0f * 1024.0f);
@@ -1222,7 +1284,8 @@ void DashboardView::render_rtss_mini_hud(
 
     // 4. FPS & Percentiles Row
     if (hud.show_fps) {
-        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.45f, 1.0f), "FPS : ");
+        std::string label = hud.label_fps.empty() ? "FPS" : hud.label_fps;
+        ImGui::TextColored(hex_to_imvec4(hud.color_fps), "%s : ", label.c_str());
         ImGui::SameLine();
         std::stringstream fps_ss;
         fps_ss << std::fixed << std::setprecision(0) << frames.current_fps;
@@ -1242,14 +1305,14 @@ void DashboardView::render_rtss_mini_hud(
         if (etw_tracker.is_active()) {
             fps_ss << " [ETW]";
         }
-        ImGui::Text("%s", fps_ss.str().c_str());
+        ImGui::TextColored(hex_to_imvec4(hud.color_values), "%s", fps_ss.str().c_str());
     }
 
     // 5. Optional Stutters & Pacing Jitter Row
     if (hud.show_stutters) {
-        ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "PACE: ");
+        ImGui::TextColored(hex_to_imvec4(hud.color_stutter), "PACE: ");
         ImGui::SameLine();
-        ImGui::Text("Jitter: %.2fms | Hitches: %u (%.1f%%)",
+        ImGui::TextColored(hex_to_imvec4(hud.color_values), "Jitter: %.2fms | Hitches: %u (%.1f%%)",
             frames.pacing_std_dev_ms,
             frames.stutter_count,
             frames.stutter_percentage
@@ -1261,7 +1324,7 @@ void DashboardView::render_rtss_mini_hud(
         std::vector<float> ft_data;
         frametime_history_.get_linear(ft_data);
         if (!ft_data.empty()) {
-            ImGui::PushStyleColor(ImGuiCol_PlotLines, ImVec4(0.00f, 0.88f, 0.95f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_PlotLines, hex_to_imvec4(hud.color_frametime));
             float graph_width = ImGui::GetContentRegionAvail().x;
             ImGui::PlotLines("##HudFrametimeGraph",
                 ft_data.data(),

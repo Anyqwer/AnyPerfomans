@@ -39,10 +39,6 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     auto last_gpu_time = std::chrono::steady_clock::now();
     auto last_thread_time = std::chrono::steady_clock::now();
     auto last_rtss_time = std::chrono::steady_clock::now();
-    auto last_frame_time = std::chrono::steady_clock::now();
-
-    anyperf::FrameStats local_frame_stats{};
-    std::deque<double> recent_frametimes; // Rolling window of last 200 frames
 
     bool running = true;
     while (running) {
@@ -89,66 +85,19 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             last_gpu_time = now;
         }
 
-        // 3. Calculate frame stats (Prefer Kernel ETW Present if active, otherwise local fallback)
+        // 3. Calculate frame stats (Order of precedence: Kernel ETW Present -> RTSS Shared Memory -> Idle)
         anyperf::FrameStats display_frame_stats{};
+        anyperf::FrameStats rtss_stats{};
+
         if (etw_tracker.is_active() && etw_tracker.get_frame_stats().total_frames > 0) {
             display_frame_stats = etw_tracker.get_frame_stats();
+        } else if (rtss_bridge.get_rtss_frame_stats(rtss_stats)) {
+            display_frame_stats = rtss_stats;
         } else {
-            double delta_ms = std::chrono::duration<double, std::milli>(now - last_frame_time).count();
-            if (delta_ms > 0.1 && delta_ms < 1000.0) {
-                local_frame_stats.frametime_ms = delta_ms;
-                local_frame_stats.current_fps = 1000.0 / delta_ms;
-                local_frame_stats.total_frames++;
-
-                recent_frametimes.push_back(delta_ms);
-                if (recent_frametimes.size() > 200) {
-                    recent_frametimes.pop_front();
-                }
-
-                double sum = std::accumulate(recent_frametimes.begin(), recent_frametimes.end(), 0.0);
-                double avg_ft = sum / recent_frametimes.size();
-                local_frame_stats.avg_fps = (avg_ft > 0.0) ? (1000.0 / avg_ft) : 0.0;
-
-                // Standard deviation
-                double var_sum = 0.0;
-                for (double ft : recent_frametimes) {
-                    double diff = ft - avg_ft;
-                    var_sum += diff * diff;
-                }
-                local_frame_stats.pacing_std_dev_ms = std::sqrt(var_sum / recent_frametimes.size());
-
-                std::vector<double> sorted_ft(recent_frametimes.begin(), recent_frametimes.end());
-                std::sort(sorted_ft.begin(), sorted_ft.end());
-
-                if (!sorted_ft.empty()) {
-                    local_frame_stats.max_fps = 1000.0 / sorted_ft.front();
-                    local_frame_stats.min_fps = 1000.0 / sorted_ft.back();
-                }
-
-                size_t idx_1pct = static_cast<size_t>(sorted_ft.size() * 0.99);
-                if (idx_1pct < sorted_ft.size()) {
-                    local_frame_stats.one_percent_low = 1000.0 / sorted_ft[idx_1pct];
-                }
-                size_t idx_01pct = static_cast<size_t>(sorted_ft.size() * 0.999);
-                if (idx_01pct < sorted_ft.size()) {
-                    local_frame_stats.zero_one_percent_low = 1000.0 / sorted_ft[idx_01pct];
-                }
-                size_t idx_001pct = static_cast<size_t>(sorted_ft.size() * 0.9999);
-                if (idx_001pct < sorted_ft.size()) {
-                    local_frame_stats.zero_zero_one_percent_low = 1000.0 / sorted_ft[idx_001pct];
-                }
-
-                uint32_t stutters = 0;
-                double stutter_thresh = (avg_ft * 2.5 > avg_ft + 10.0) ? (avg_ft * 2.5) : (avg_ft + 10.0);
-                for (double ft : recent_frametimes) {
-                    if (ft > stutter_thresh) stutters++;
-                }
-                local_frame_stats.stutter_count = stutters;
-                local_frame_stats.stutter_percentage = (recent_frametimes.empty()) ? 0.0 : ((static_cast<double>(stutters) / recent_frametimes.size()) * 100.0);
-            }
-            display_frame_stats = local_frame_stats;
+            // Idle state: no 3D application is currently presenting
+            display_frame_stats.current_fps = 0.0;
+            display_frame_stats.frametime_ms = 0.0;
         }
-        last_frame_time = now;
 
         // Configurable Hotkey: Toggle Benchmark Session (Default: F10)
         UINT bench_key = config_mgr.get_hotkeys().toggle_benchmark_key;
@@ -209,6 +158,10 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         }
 
         backend.end_frame();
+
+        if (current_mode == anyperf::OverlayMode::Hidden) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+        }
     }
 
     rtss_bridge.clear_osd();

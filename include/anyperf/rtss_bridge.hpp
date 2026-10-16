@@ -51,6 +51,9 @@ public:
     DWORD get_foreground_process_id() const { return foreground_pid_; }
     std::string get_foreground_process_name() const { return foreground_name_; }
 
+    // Retrieve high-precision frame stats computed directly by RTSS for active 3D app
+    bool get_rtss_frame_stats(FrameStats& out_stats) const;
+
 private:
     bool write_to_shared_memory(const char* text, const BYTE* graph_buffer = nullptr, DWORD graph_buffer_size = 0);
 

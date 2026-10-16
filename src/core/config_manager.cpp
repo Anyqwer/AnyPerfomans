@@ -66,6 +66,14 @@ bool ConfigManager::load_from_file(const std::wstring& filename) {
         hud_.label_fps = j.value("label_fps", "FPS");
         hud_.label_frametime = j.value("label_frametime", "FT");
 
+        hud_.color_gpu = j.value("color_gpu", "00E5FF");
+        hud_.color_cpu = j.value("color_cpu", "5CC8FF");
+        hud_.color_ram = j.value("color_ram", "FFB300");
+        hud_.color_fps = j.value("color_fps", "00E676");
+        hud_.color_frametime = j.value("color_frametime", "00E676");
+        hud_.color_values = j.value("color_values", "FFFFFF");
+        hud_.color_stutter = j.value("color_stutter", "FF1744");
+
         hud_.rtss_graph_filled = j.value("rtss_graph_filled", false);
         hud_.rtss_graph_width = j.value("rtss_graph_width", -32);
         hud_.rtss_graph_height = j.value("rtss_graph_height", -4);
@@ -133,6 +141,14 @@ bool ConfigManager::save_to_file(const std::wstring& filename) {
         {"label_ram", hud_.label_ram},
         {"label_fps", hud_.label_fps},
         {"label_frametime", hud_.label_frametime},
+
+        {"color_gpu", hud_.color_gpu},
+        {"color_cpu", hud_.color_cpu},
+        {"color_ram", hud_.color_ram},
+        {"color_fps", hud_.color_fps},
+        {"color_frametime", hud_.color_frametime},
+        {"color_values", hud_.color_values},
+        {"color_stutter", hud_.color_stutter},
 
         {"rtss_graph_filled", hud_.rtss_graph_filled},
         {"rtss_graph_width", hud_.rtss_graph_width},

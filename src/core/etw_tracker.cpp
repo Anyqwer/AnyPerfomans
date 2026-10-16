@@ -75,8 +75,9 @@ void EtwTracker::on_present(uint64_t qpc_timestamp, DWORD /*pid*/) {
     double delta_ms = static_cast<double>(qpc_timestamp - prev_qpc) * 1000.0 / static_cast<double>(qpc_freq_);
     last_present_qpc_.store(qpc_timestamp, std::memory_order_relaxed);
 
-    // Filter out aberrant delta timestamps (e.g. paused rendering or system sleep)
-    if (delta_ms < 0.1 || delta_ms > 1000.0) {
+    // Filter out aberrant delta timestamps: discard sub-millisecond present bursts (<0.5ms -> >2000 FPS)
+    // and paused rendering / system sleep (>1000ms -> <1 FPS)
+    if (delta_ms < 0.5 || delta_ms > 1000.0) {
         return;
     }
 
