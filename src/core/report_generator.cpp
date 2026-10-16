@@ -183,16 +183,40 @@ std::wstring ReportGenerator::generate_html_report(
                 <div class="card-val val-fps">)html"
          << std::fixed << std::setprecision(1) << record.avg_fps
          << R"html(</div>
-                <div class="card-sub">Avg Frametime: )html"
-         << std::fixed << std::setprecision(2) << record.avg_frametime_ms
-         << R"html( ms</div>
+                <div class="card-sub">Min: )html"
+         << std::fixed << std::setprecision(1) << record.min_fps
+         << " | Max: " << std::fixed << std::setprecision(1) << record.max_fps
+         << R"html( FPS</div>
             </div>
             <div class="card">
                 <div class="card-title">1% Low FPS</div>
                 <div class="card-val val-low">)html"
          << std::fixed << std::setprecision(1) << record.one_percent_low
          << R"html(</div>
-                <div class="card-sub">Frame Delivery Consistency</div>
+                <div class="card-sub">0.1%: )html"
+         << std::fixed << std::setprecision(1) << record.zero_one_percent_low
+         << " | 0.01%: " << std::fixed << std::setprecision(1) << record.zero_zero_one_percent_low
+         << R"html( FPS</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Pacing Jitter (&sigma;)</div>
+                <div class="card-val">)html"
+         << std::fixed << std::setprecision(2) << record.pacing_std_dev_ms
+         << R"html( ms</div>
+                <div class="card-sub">Avg Frametime: )html"
+         << std::fixed << std::setprecision(2) << record.avg_frametime_ms
+         << R"html( ms</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Stutters / Hitches</div>
+                <div class="card-val" style="color: )html"
+         << (record.stutter_count > 5 ? "var(--neon-red)" : "var(--green)")
+         << R"html(;">)html"
+         << record.stutter_count
+         << R"html(</div>
+                <div class="card-sub">)html"
+         << std::fixed << std::setprecision(2) << record.stutter_percentage
+         << R"html(% of captured frames</div>
             </div>
             <div class="card">
                 <div class="card-title">GPU Telemetry</div>
@@ -315,6 +339,71 @@ std::wstring ReportGenerator::generate_html_report(
 </html>)html";
 
     html.close();
+    return out_path;
+}
+
+std::wstring ReportGenerator::generate_csv_report(
+    const BenchmarkRecord& record,
+    const std::vector<float>& frametime_samples,
+    const GpuMetrics& gpu,
+    const std::wstring& output_dir
+) {
+    CreateDirectoryW(output_dir.c_str(), nullptr);
+
+    std::time_t now = std::time(nullptr);
+    std::tm ltm{};
+    localtime_s(&ltm, &now);
+
+    std::wstringstream fname_ss;
+    fname_ss << output_dir << L"\\benchmark_"
+             << std::setfill(L'0')
+             << (ltm.tm_year + 1900)
+             << std::setw(2) << (ltm.tm_mon + 1)
+             << std::setw(2) << ltm.tm_mday << L"_"
+             << std::setw(2) << ltm.tm_hour
+             << std::setw(2) << ltm.tm_min
+             << std::setw(2) << ltm.tm_sec << L".csv";
+
+    std::wstring out_path = fname_ss.str();
+    std::ofstream csv(out_path);
+    if (!csv.is_open()) return L"";
+
+    // Metadata header comments (CapFrameX / PresentMon standard compatible)
+    csv << "# AnyPerfomans Benchmark Run Log\n";
+    csv << "# Session Target: " << wide_to_utf8(record.session_name) << "\n";
+    csv << "# Duration (sec): " << std::fixed << std::setprecision(2) << record.duration_seconds << "\n";
+    csv << "# Average FPS: " << std::fixed << std::setprecision(2) << record.avg_fps << "\n";
+    csv << "# Min FPS: " << std::fixed << std::setprecision(2) << record.min_fps << "\n";
+    csv << "# Max FPS: " << std::fixed << std::setprecision(2) << record.max_fps << "\n";
+    csv << "# 1% Low FPS: " << std::fixed << std::setprecision(2) << record.one_percent_low << "\n";
+    csv << "# 0.1% Low FPS: " << std::fixed << std::setprecision(2) << record.zero_one_percent_low << "\n";
+    csv << "# 0.01% Low FPS: " << std::fixed << std::setprecision(2) << record.zero_zero_one_percent_low << "\n";
+    csv << "# Pacing Jitter Std Dev (ms): " << std::fixed << std::setprecision(3) << record.pacing_std_dev_ms << "\n";
+    csv << "# Stutter Count: " << record.stutter_count << "\n";
+    csv << "# Stutter Percentage (%): " << std::fixed << std::setprecision(2) << record.stutter_percentage << "%\n";
+    csv << "# GPU Name: " << wide_to_utf8(gpu.adapter_name) << "\n";
+    csv << "# GPU Core Usage: " << gpu.core_usage_percent << "%\n";
+    if (gpu.temperature_c > 0) csv << "# GPU Temp: " << gpu.temperature_c << " C\n";
+    if (gpu.core_clock_mhz > 0) csv << "# GPU Clock: " << gpu.core_clock_mhz << " MHz\n";
+
+    csv << "# Process Attribution:\n";
+    for (size_t i = 0; i < record.process_summaries.size(); ++i) {
+        const auto& p = record.process_summaries[i];
+        csv << "#   - " << wide_to_utf8(p.name) << " [PID " << p.pid << "]: "
+            << std::fixed << std::setprecision(2) << p.avg_cpu_percent << "% CPU, "
+            << p.avg_ram_mb << " MB RAM (" << (i == 0 ? "PRIMARY" : "SECONDARY") << ")\n";
+    }
+
+    // CSV Data Table
+    csv << "\nFrameIndex,Frametime_ms,FPS\n";
+    for (size_t i = 0; i < frametime_samples.size(); ++i) {
+        float ft = frametime_samples[i];
+        float fps = (ft > 0.0f) ? (1000.0f / ft) : 0.0f;
+        csv << i << "," << std::fixed << std::setprecision(3) << ft << ","
+            << std::fixed << std::setprecision(1) << fps << "\n";
+    }
+
+    csv.close();
     return out_path;
 }
 

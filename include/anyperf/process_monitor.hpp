@@ -36,6 +36,12 @@ public:
     double get_total_secondary_cpu() const;
     size_t get_total_secondary_ram() const;
 
+    // System-wide memory
+    size_t get_system_ram_used() const { return system_ram_used_; }
+    size_t get_system_ram_total() const { return system_ram_total_; }
+    size_t get_system_commit_used() const { return system_commit_used_; }
+    size_t get_system_commit_total() const { return system_commit_total_; }
+
 private:
     HANDLE open_process_safe(DWORD pid);
     void sample_process(HANDLE hProcess, ProcessMetrics& metrics, uint64_t system_delta_time_100ns);
@@ -57,6 +63,11 @@ private:
     std::chrono::steady_clock::time_point last_sample_time_;
     uint32_t logical_core_count_ = 1;
     double cpu_base_frequency_hz_ = 3.5e9;
+
+    size_t system_ram_used_ = 0;
+    size_t system_ram_total_ = 0;
+    size_t system_commit_used_ = 0;
+    size_t system_commit_total_ = 0;
 };
 
 } // namespace anyperf

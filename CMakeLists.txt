@@ -72,6 +72,7 @@ set(CORE_SOURCES
     src/core/gpu_monitor.cpp
     src/core/process_monitor.cpp
     src/core/report_generator.cpp
+    src/core/rtss_bridge.cpp
     src/core/thread_profiler.cpp
     src/render/dx11_backend.cpp
     src/ui/dashboard_view.cpp

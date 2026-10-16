@@ -40,6 +40,13 @@ public:
         const GpuMetrics& gpu_metrics
     );
 
+    // Benchmark Controls
+    bool is_benchmarking() const { return is_benchmarking_; }
+    double get_benchmark_elapsed_sec() const;
+    void start_benchmark();
+    void stop_benchmark(const ProcessMonitor& proc_mon, const GpuMetrics& gpu, const FrameStats& frames);
+    void toggle_benchmark(const ProcessMonitor& proc_mon, const GpuMetrics& gpu, const FrameStats& frames);
+
 private:
     void render_header_bar(
         ProcessMonitor& proc_mon,

@@ -57,10 +57,18 @@ struct ThreadMetrics {
 struct FrameStats {
     double current_fps = 0.0;
     double avg_fps = 0.0;
-    double one_percent_low = 0.0;
-    double zero_one_percent_low = 0.0;
+    double min_fps = 0.0;
+    double max_fps = 0.0;
+    double one_percent_low = 0.0;          // 99th percentile
+    double zero_one_percent_low = 0.0;     // 99.9th percentile (0.1% Low)
+    double zero_zero_one_percent_low = 0.0;// 99.99th percentile (0.01% Low)
     double frametime_ms = 0.0;
     uint64_t total_frames = 0;
+
+    // Pacing & Stutters
+    uint32_t stutter_count = 0;            // Number of frame delivery hitches
+    double stutter_percentage = 0.0;       // % of total frames that stuttered
+    double pacing_std_dev_ms = 0.0;        // Frametime standard deviation (jitter)
 };
 
 enum class OverlayMode {
@@ -79,8 +87,15 @@ struct BenchmarkProcessSummary {
 struct BenchmarkRecord {
     std::wstring session_name;
     double avg_fps = 0.0;
+    double min_fps = 0.0;
+    double max_fps = 0.0;
     double one_percent_low = 0.0;
+    double zero_one_percent_low = 0.0;
+    double zero_zero_one_percent_low = 0.0;
     double avg_frametime_ms = 0.0;
+    uint32_t stutter_count = 0;
+    double stutter_percentage = 0.0;
+    double pacing_std_dev_ms = 0.0;
     double duration_seconds = 0.0;
     std::vector<BenchmarkProcessSummary> process_summaries;
 };

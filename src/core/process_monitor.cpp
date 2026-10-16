@@ -323,6 +323,16 @@ void ProcessMonitor::update() {
 
         sample_process(h, target, totalSysTime);
     }
+
+    // System-wide RAM and Pagefile metrics
+    MEMORYSTATUSEX memStatus{};
+    memStatus.dwLength = sizeof(memStatus);
+    if (GlobalMemoryStatusEx(&memStatus)) {
+        system_ram_total_ = memStatus.ullTotalPhys;
+        system_ram_used_ = (memStatus.ullTotalPhys >= memStatus.ullAvailPhys) ? (memStatus.ullTotalPhys - memStatus.ullAvailPhys) : 0;
+        system_commit_total_ = memStatus.ullTotalPageFile;
+        system_commit_used_ = (memStatus.ullTotalPageFile >= memStatus.ullAvailPageFile) ? (memStatus.ullTotalPageFile - memStatus.ullAvailPageFile) : 0;
+    }
 }
 
 double ProcessMonitor::get_total_secondary_cpu() const {

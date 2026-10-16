@@ -17,6 +17,14 @@ public:
         const std::wstring& output_dir = L"reports"
     );
 
+    // Generate a raw CSV data log for Excel, Google Sheets, or CapFrameX import
+    static std::wstring generate_csv_report(
+        const BenchmarkRecord& record,
+        const std::vector<float>& frametime_samples,
+        const GpuMetrics& gpu,
+        const std::wstring& output_dir = L"reports"
+    );
+
     // Open file in default system web browser
     static void open_in_browser(const std::wstring& file_path);
 };

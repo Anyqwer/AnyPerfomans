@@ -5,11 +5,13 @@
 #include "anyperf/gpu_monitor.hpp"
 #include "anyperf/config_manager.hpp"
 #include "anyperf/dashboard_view.hpp"
+#include "anyperf/rtss_bridge.hpp"
 #include <chrono>
 #include <thread>
 #include <deque>
 #include <numeric>
 #include <algorithm>
+#include <cmath>
 
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     anyperf::ConfigManager config_mgr;
@@ -23,12 +25,14 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     anyperf::GpuMonitor gpu_mon;
     anyperf::EtwTracker etw_tracker;
     anyperf::DashboardView dashboard_view;
+    anyperf::RTSSBridge rtss_bridge;
 
     DWORD active_etw_pid = 0;
 
     auto last_telemetry_time = std::chrono::steady_clock::now();
     auto last_gpu_time = std::chrono::steady_clock::now();
     auto last_thread_time = std::chrono::steady_clock::now();
+    auto last_rtss_time = std::chrono::steady_clock::now();
     auto last_frame_time = std::chrono::steady_clock::now();
 
     anyperf::FrameStats local_frame_stats{};
@@ -46,7 +50,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         if (toggle_key != 0 && (GetAsyncKeyState(toggle_key) & 1)) {
             auto current_mode = backend.get_overlay_mode();
             auto new_mode = (current_mode == anyperf::OverlayMode::Dashboard)
-                ? anyperf::OverlayMode::MiniHud
+                ? (config_mgr.get_hud().output_to_dx11_overlay ? anyperf::OverlayMode::MiniHud : anyperf::OverlayMode::Hidden)
                 : anyperf::OverlayMode::Dashboard;
             backend.set_overlay_mode(new_mode);
         }
@@ -88,18 +92,55 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
                 }
 
                 double sum = std::accumulate(recent_frametimes.begin(), recent_frametimes.end(), 0.0);
-                local_frame_stats.avg_fps = 1000.0 / (sum / recent_frametimes.size());
+                double avg_ft = sum / recent_frametimes.size();
+                local_frame_stats.avg_fps = (avg_ft > 0.0) ? (1000.0 / avg_ft) : 0.0;
+
+                // Standard deviation
+                double var_sum = 0.0;
+                for (double ft : recent_frametimes) {
+                    double diff = ft - avg_ft;
+                    var_sum += diff * diff;
+                }
+                local_frame_stats.pacing_std_dev_ms = std::sqrt(var_sum / recent_frametimes.size());
 
                 std::vector<double> sorted_ft(recent_frametimes.begin(), recent_frametimes.end());
                 std::sort(sorted_ft.begin(), sorted_ft.end());
+
+                if (!sorted_ft.empty()) {
+                    local_frame_stats.max_fps = 1000.0 / sorted_ft.front();
+                    local_frame_stats.min_fps = 1000.0 / sorted_ft.back();
+                }
+
                 size_t idx_1pct = static_cast<size_t>(sorted_ft.size() * 0.99);
                 if (idx_1pct < sorted_ft.size()) {
                     local_frame_stats.one_percent_low = 1000.0 / sorted_ft[idx_1pct];
                 }
+                size_t idx_01pct = static_cast<size_t>(sorted_ft.size() * 0.999);
+                if (idx_01pct < sorted_ft.size()) {
+                    local_frame_stats.zero_one_percent_low = 1000.0 / sorted_ft[idx_01pct];
+                }
+                size_t idx_001pct = static_cast<size_t>(sorted_ft.size() * 0.9999);
+                if (idx_001pct < sorted_ft.size()) {
+                    local_frame_stats.zero_zero_one_percent_low = 1000.0 / sorted_ft[idx_001pct];
+                }
+
+                uint32_t stutters = 0;
+                double stutter_thresh = (avg_ft * 2.5 > avg_ft + 10.0) ? (avg_ft * 2.5) : (avg_ft + 10.0);
+                for (double ft : recent_frametimes) {
+                    if (ft > stutter_thresh) stutters++;
+                }
+                local_frame_stats.stutter_count = stutters;
+                local_frame_stats.stutter_percentage = (recent_frametimes.empty()) ? 0.0 : ((static_cast<double>(stutters) / recent_frametimes.size()) * 100.0);
             }
             display_frame_stats = local_frame_stats;
         }
         last_frame_time = now;
+
+        // Configurable Hotkey: Toggle Benchmark Session (Default: F10)
+        UINT bench_key = config_mgr.get_hotkeys().toggle_benchmark_key;
+        if (bench_key != 0 && (GetAsyncKeyState(bench_key) & 1)) {
+            dashboard_view.toggle_benchmark(proc_mon, gpu_mon.get_metrics(), display_frame_stats);
+        }
 
         // 4. Sample high-precision multi-process telemetry (every 150ms)
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_telemetry_time).count() >= 150) {
@@ -120,7 +161,20 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             last_thread_time = now;
         }
 
-        // 6. Render UI frame
+        // 6. Update RTSS Shared Memory V2 On-Screen Display (every 100ms)
+        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_rtss_time).count() >= 100) {
+            rtss_bridge.update_osd(
+                proc_mon,
+                gpu_mon.get_metrics(),
+                display_frame_stats,
+                config_mgr,
+                dashboard_view.is_benchmarking(),
+                dashboard_view.get_benchmark_elapsed_sec()
+            );
+            last_rtss_time = now;
+        }
+
+        // 7. Render UI frame
         backend.begin_frame();
 
         auto current_mode = backend.get_overlay_mode();
@@ -142,6 +196,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         backend.end_frame();
     }
 
+    rtss_bridge.clear_osd();
+    rtss_bridge.disconnect();
     etw_tracker.stop();
     backend.shutdown();
     return 0;

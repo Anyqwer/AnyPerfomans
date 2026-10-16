@@ -653,6 +653,119 @@ void DashboardView::render_thread_inspector(
     }
 }
 
+double DashboardView::get_benchmark_elapsed_sec() const {
+    if (!is_benchmarking_) return 0.0;
+    return ImGui::GetTime() - benchmark_start_time_;
+}
+
+void DashboardView::start_benchmark() {
+    is_benchmarking_ = true;
+    benchmark_start_time_ = ImGui::GetTime();
+    current_benchmark_frametimes_.clear();
+    MessageBeep(MB_OK);
+}
+
+void DashboardView::stop_benchmark(const ProcessMonitor& proc_mon, const GpuMetrics& gpu, const FrameStats& frames) {
+    if (!is_benchmarking_) return;
+    is_benchmarking_ = false;
+
+    BenchmarkRecord rec;
+    const auto* primary = proc_mon.get_primary_target();
+    rec.session_name = primary ? (L"Benchmark of " + primary->name) : L"Multi-Target Benchmark";
+    rec.duration_seconds = ImGui::GetTime() - benchmark_start_time_;
+    if (rec.duration_seconds < 0.1) rec.duration_seconds = 0.1;
+
+    // Analyze captured benchmark frametimes
+    if (!current_benchmark_frametimes_.empty()) {
+        double sum = 0.0;
+        for (float ft : current_benchmark_frametimes_) sum += ft;
+        double avg_ft = sum / current_benchmark_frametimes_.size();
+        rec.avg_frametime_ms = avg_ft;
+        rec.avg_fps = (avg_ft > 0.0) ? (1000.0 / avg_ft) : 0.0;
+
+        // Pacing Standard Deviation (jitter)
+        double var_sum = 0.0;
+        for (float ft : current_benchmark_frametimes_) {
+            double diff = ft - avg_ft;
+            var_sum += diff * diff;
+        }
+        rec.pacing_std_dev_ms = std::sqrt(var_sum / current_benchmark_frametimes_.size());
+
+        // Sort for percentiles and min/max
+        std::vector<float> sorted_ft = current_benchmark_frametimes_;
+        std::sort(sorted_ft.begin(), sorted_ft.end());
+
+        rec.max_fps = (sorted_ft.front() > 0.0f) ? (1000.0 / sorted_ft.front()) : 0.0;
+        rec.min_fps = (sorted_ft.back() > 0.0f) ? (1000.0 / sorted_ft.back()) : 0.0;
+
+        size_t idx_1pct = static_cast<size_t>(sorted_ft.size() * 0.99);
+        if (idx_1pct < sorted_ft.size()) {
+            rec.one_percent_low = 1000.0 / sorted_ft[idx_1pct];
+        }
+        size_t idx_01pct = static_cast<size_t>(sorted_ft.size() * 0.999);
+        if (idx_01pct < sorted_ft.size()) {
+            rec.zero_one_percent_low = 1000.0 / sorted_ft[idx_01pct];
+        }
+        size_t idx_001pct = static_cast<size_t>(sorted_ft.size() * 0.9999);
+        if (idx_001pct < sorted_ft.size()) {
+            rec.zero_zero_one_percent_low = 1000.0 / sorted_ft[idx_001pct];
+        }
+
+        // Stutters (frametime > 2.5 * avg or avg + 10ms)
+        uint32_t stutters = 0;
+        double stutter_thresh = (avg_ft * 2.5 > avg_ft + 10.0) ? (avg_ft * 2.5) : (avg_ft + 10.0);
+        for (float ft : current_benchmark_frametimes_) {
+            if (ft > stutter_thresh) stutters++;
+        }
+        rec.stutter_count = stutters;
+        rec.stutter_percentage = (static_cast<double>(stutters) / current_benchmark_frametimes_.size()) * 100.0;
+    } else {
+        rec.avg_fps = frames.avg_fps > 0 ? frames.avg_fps : frames.current_fps;
+        rec.min_fps = frames.min_fps;
+        rec.max_fps = frames.max_fps;
+        rec.one_percent_low = frames.one_percent_low;
+        rec.zero_one_percent_low = frames.zero_one_percent_low;
+        rec.zero_zero_one_percent_low = frames.zero_zero_one_percent_low;
+        rec.avg_frametime_ms = frames.frametime_ms;
+        rec.stutter_count = frames.stutter_count;
+        rec.stutter_percentage = frames.stutter_percentage;
+        rec.pacing_std_dev_ms = frames.pacing_std_dev_ms;
+    }
+
+    for (const auto& t : proc_mon.get_monitored_targets()) {
+        BenchmarkProcessSummary sum;
+        sum.pid = t.pid;
+        sum.name = t.name;
+        sum.avg_cpu_percent = t.cpu_percent;
+        sum.avg_ram_mb = t.private_working_set / (1024 * 1024);
+        rec.process_summaries.push_back(sum);
+    }
+
+    benchmark_history_.push_back(rec);
+
+    // Auto-generate HTML report and CSV data log
+    last_generated_report_path_ = ReportGenerator::generate_html_report(
+        rec,
+        current_benchmark_frametimes_,
+        gpu
+    );
+    ReportGenerator::generate_csv_report(
+        rec,
+        current_benchmark_frametimes_,
+        gpu
+    );
+
+    MessageBeep(MB_ICONASTERISK);
+}
+
+void DashboardView::toggle_benchmark(const ProcessMonitor& proc_mon, const GpuMetrics& gpu, const FrameStats& frames) {
+    if (is_benchmarking_) {
+        stop_benchmark(proc_mon, gpu, frames);
+    } else {
+        start_benchmark();
+    }
+}
+
 void DashboardView::render_benchmark_tab(
     const ProcessMonitor& proc_mon,
     const GpuMetrics& gpu,
@@ -668,50 +781,27 @@ void DashboardView::render_benchmark_tab(
 
     if (!is_benchmarking_) {
         ImGui::PushFont(fonts.bold);
-        if (ImGui::Button("[START BENCHMARK SESSION]", ImVec2(260.0f * fonts.dpi_scale, 36.0f * fonts.dpi_scale))) {
-            is_benchmarking_ = true;
-            benchmark_start_time_ = ImGui::GetTime();
-            current_benchmark_frametimes_.clear();
+        if (ImGui::Button("[START BENCHMARK SESSION (F10)]", ImVec2(280.0f * fonts.dpi_scale, 36.0f * fonts.dpi_scale))) {
+            start_benchmark();
         }
         ImGui::PopFont();
     } else {
-        double elapsed = ImGui::GetTime() - benchmark_start_time_;
+        double elapsed = get_benchmark_elapsed_sec();
         float progress = static_cast<float>(elapsed / benchmark_duration_sec_);
         if (progress > 1.0f) progress = 1.0f;
 
         ImGui::ProgressBar(progress, ImVec2(340.0f * fonts.dpi_scale, 32.0f * fonts.dpi_scale));
+        ImGui::SameLine();
+        if (ImGui::Button("Stop & Save")) {
+            stop_benchmark(proc_mon, gpu, frames);
+        }
         ImGui::SameLine();
         if (ImGui::Button("Cancel")) {
             is_benchmarking_ = false;
         }
 
         if (elapsed >= benchmark_duration_sec_) {
-            is_benchmarking_ = false;
-            BenchmarkRecord rec;
-            const auto* primary = proc_mon.get_primary_target();
-            rec.session_name = primary ? (L"Benchmark of " + primary->name) : L"Multi-Target Benchmark";
-            rec.avg_fps = frames.avg_fps > 0 ? frames.avg_fps : frames.current_fps;
-            rec.one_percent_low = frames.one_percent_low;
-            rec.avg_frametime_ms = frames.frametime_ms;
-            rec.duration_seconds = benchmark_duration_sec_;
-
-            for (const auto& t : proc_mon.get_monitored_targets()) {
-                BenchmarkProcessSummary sum;
-                sum.pid = t.pid;
-                sum.name = t.name;
-                sum.avg_cpu_percent = t.cpu_percent;
-                sum.avg_ram_mb = t.private_working_set / (1024 * 1024);
-                rec.process_summaries.push_back(sum);
-            }
-
-            benchmark_history_.push_back(rec);
-
-            // Auto-generate HTML report
-            last_generated_report_path_ = ReportGenerator::generate_html_report(
-                rec,
-                current_benchmark_frametimes_,
-                gpu
-            );
+            stop_benchmark(proc_mon, gpu, frames);
         }
     }
 
@@ -759,7 +849,17 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, const AppFont
     auto& hud = config_mgr.get_hud();
     auto& hotkeys = config_mgr.get_hotkeys();
 
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "RTSS MINI-OVERLAY & HUD CUSTOMIZATION");
+    // 0. Output Display Targets (MSI Afterburner / RTSS Architecture)
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "TELEMETRY ENGINE OUTPUT TARGETS");
+    ImGui::Checkbox("Output to RTSS On-Screen Display (RivaTuner Shared Memory V2)", &hud.output_to_rtss);
+    ImGui::TextDisabled("Injects real-time telemetry straight into RivaTuner OSD memory slot 'AnyPerfomans' with custom formatting tags.");
+    ImGui::Checkbox("DirectX 11 Standalone Transparent Overlay (Zero-Hook Fallback)", &hud.output_to_dx11_overlay);
+    ImGui::TextDisabled("Hardware-accelerated layered window overlay running independently over games.");
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "MINI-OVERLAY & HUD CUSTOMIZATION");
     ImGui::TextDisabled("Configure on-screen position, font scale, background opacity, and frametime graph.");
     ImGui::Spacing();
 
@@ -806,15 +906,20 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, const AppFont
     ImGui::Checkbox("Show FPS", &hud.show_fps);
     ImGui::Checkbox("Show 1% Low FPS", &hud.show_1pct_low);
     ImGui::Checkbox("Show 0.1% Low FPS", &hud.show_01pct_low);
+    ImGui::Checkbox("Show 0.01% Low FPS", &hud.show_001pct_low);
+    ImGui::Checkbox("Show Min / Max FPS", &hud.show_min_max);
+    ImGui::Checkbox("Show Stutters / Jitter", &hud.show_stutters);
     ImGui::Checkbox("Show Frametime (ms)", &hud.show_frametime_text);
-    ImGui::Checkbox("Show GPU Core Load %", &hud.show_gpu_usage);
 
     ImGui::NextColumn();
 
+    ImGui::Checkbox("Show GPU Core Load %", &hud.show_gpu_usage);
     ImGui::Checkbox("Show GPU Temperature C", &hud.show_gpu_temp);
     ImGui::Checkbox("Show GPU VRAM Usage", &hud.show_gpu_vram);
     ImGui::Checkbox("Show GPU Core Clock (MHz)", &hud.show_gpu_clock);
     ImGui::Checkbox("Show CPU Total Load %", &hud.show_cpu_usage);
+    ImGui::Checkbox("Show System RAM", &hud.show_system_ram);
+    ImGui::Checkbox("Show Pagefile / Commit", &hud.show_pagefile);
     ImGui::Checkbox("Show Monitored Secondary Apps", &hud.show_secondary_apps);
 
     ImGui::Columns(1);
@@ -849,12 +954,15 @@ void DashboardView::render_rtss_mini_hud(
     const auto& fonts = backend.get_fonts();
 
     // Compute dynamic window dimensions
-    float hud_width = 320.0f * hud.font_scale * fonts.dpi_scale;
+    float hud_width = 340.0f * hud.font_scale * fonts.dpi_scale;
     float hud_height = 80.0f * hud.font_scale * fonts.dpi_scale;
 
-    if (hud.show_gpu_usage || hud.show_gpu_temp || hud.show_gpu_vram) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
+    if (is_benchmarking_) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
+    if (hud.show_gpu_usage || hud.show_gpu_temp || hud.show_gpu_vram || hud.show_gpu_clock) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
     if (hud.show_cpu_usage) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
+    if (hud.show_system_ram) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
     if (hud.show_fps) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
+    if (hud.show_stutters) hud_height += 22.0f * hud.font_scale * fonts.dpi_scale;
     if (hud.show_frametime_graph) hud_height += (hud.frametime_graph_height + 14.0f) * hud.font_scale * fonts.dpi_scale;
     if (hud.show_secondary_apps && !targets.empty()) {
         hud_height += (static_cast<float>(targets.size()) * 22.0f + 16.0f) * hud.font_scale * fonts.dpi_scale;
@@ -915,8 +1023,22 @@ void DashboardView::render_rtss_mini_hud(
     // Switch to Monospace Font for Razor-Sharp RTSS HUD Numbers
     ImGui::PushFont(fonts.mono);
 
+    // 0. Live Benchmark Recording Badge
+    if (is_benchmarking_) {
+        double elapsed = get_benchmark_elapsed_sec();
+        int sec = static_cast<int>(elapsed);
+        int mins = sec / 60;
+        int rem_sec = sec % 60;
+        char rec_str[64];
+        sprintf_s(rec_str, "[REC %02d:%02d]", mins, rem_sec);
+        float pulse = 0.6f + 0.4f * std::sin(static_cast<float>(elapsed * 5.0));
+        ImGui::TextColored(ImVec4(1.0f, 0.1f * pulse, 0.15f * pulse, 1.0f), "%s", rec_str);
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(0.9f, 0.9f, 0.9f, 1.0f), "Avg: %.0f | 1%%: %.0f", frames.avg_fps, frames.one_percent_low);
+    }
+
     // 1. GPU Row
-    if (hud.show_gpu_usage || hud.show_gpu_temp || hud.show_gpu_vram) {
+    if (hud.show_gpu_usage || hud.show_gpu_temp || hud.show_gpu_vram || hud.show_gpu_clock) {
         ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "GPU : ");
         ImGui::SameLine();
         std::stringstream gpu_ss;
@@ -947,14 +1069,39 @@ void DashboardView::render_rtss_mini_hud(
         }
     }
 
-    // 3. FPS & 1% Low Row
+    // 3. System RAM & Pagefile Row
+    if (hud.show_system_ram) {
+        float ram_used_gb = static_cast<float>(proc_mon.get_system_ram_used()) / (1024.0f * 1024.0f * 1024.0f);
+        float ram_tot_gb = static_cast<float>(proc_mon.get_system_ram_total()) / (1024.0f * 1024.0f * 1024.0f);
+        ImGui::TextColored(ImVec4(1.00f, 0.70f, 0.00f, 1.0f), "RAM : ");
+        ImGui::SameLine();
+        if (ram_tot_gb > 0.0f) {
+            ImGui::Text("%.1f / %.1f GB", ram_used_gb, ram_tot_gb);
+        } else {
+            ImGui::Text("%.1f GB", ram_used_gb);
+        }
+        if (hud.show_pagefile) {
+            float page_used_gb = static_cast<float>(proc_mon.get_system_commit_used()) / (1024.0f * 1024.0f * 1024.0f);
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(0.6f, 0.6f, 0.6f, 1.0f), "| Page: %.1f GB", page_used_gb);
+        }
+    }
+
+    // 4. FPS & Percentiles Row
     if (hud.show_fps) {
         ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.45f, 1.0f), "FPS : ");
         ImGui::SameLine();
         std::stringstream fps_ss;
         fps_ss << std::fixed << std::setprecision(0) << frames.current_fps;
-        if (hud.show_1pct_low) {
-            fps_ss << "  (1%: " << std::fixed << std::setprecision(0) << frames.one_percent_low << ")";
+        if (hud.show_1pct_low && frames.one_percent_low > 0.0) {
+            fps_ss << "  (1%: " << std::fixed << std::setprecision(0) << frames.one_percent_low;
+            if (hud.show_01pct_low && frames.zero_one_percent_low > 0.0) {
+                fps_ss << ", 0.1%: " << std::fixed << std::setprecision(0) << frames.zero_one_percent_low;
+            }
+            if (hud.show_001pct_low && frames.zero_zero_one_percent_low > 0.0) {
+                fps_ss << ", 0.01%: " << std::fixed << std::setprecision(0) << frames.zero_zero_one_percent_low;
+            }
+            fps_ss << ")";
         }
         if (hud.show_frametime_text) {
             fps_ss << "  FT: " << std::fixed << std::setprecision(1) << frames.frametime_ms << "ms";
@@ -965,7 +1112,18 @@ void DashboardView::render_rtss_mini_hud(
         ImGui::Text("%s", fps_ss.str().c_str());
     }
 
-    // 4. Configurable Frametime Graph Sparkline
+    // 5. Optional Stutters & Pacing Jitter Row
+    if (hud.show_stutters) {
+        ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "PACE: ");
+        ImGui::SameLine();
+        ImGui::Text("Jitter: %.2fms | Hitches: %u (%.1f%%)",
+            frames.pacing_std_dev_ms,
+            frames.stutter_count,
+            frames.stutter_percentage
+        );
+    }
+
+    // 6. Configurable Frametime Graph Sparkline
     if (hud.show_frametime_graph) {
         std::vector<float> ft_data;
         frametime_history_.get_linear(ft_data);
@@ -985,7 +1143,7 @@ void DashboardView::render_rtss_mini_hud(
         }
     }
 
-    // 5. Monitored Secondary Apps Breakdown
+    // 7. Monitored Secondary Apps Breakdown
     if (hud.show_secondary_apps && !targets.empty()) {
         ImGui::Separator();
         for (const auto& t : targets) {

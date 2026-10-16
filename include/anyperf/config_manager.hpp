@@ -21,10 +21,17 @@ struct HudConfig {
     float bg_opacity = 0.85f;
     float font_scale = 1.0f;
 
+    // Output Target Toggles
+    bool output_to_rtss = true;
+    bool output_to_dx11_overlay = true;
+
     // Metric Toggles
     bool show_fps = true;
     bool show_1pct_low = true;
     bool show_01pct_low = true;
+    bool show_001pct_low = false;
+    bool show_min_max = true;
+    bool show_stutters = true;
     bool show_frametime_text = true;
 
     // Frametime Graph Settings
@@ -41,6 +48,7 @@ struct HudConfig {
 
     bool show_cpu_usage = true;
     bool show_system_ram = true;
+    bool show_pagefile = true;
     bool show_secondary_apps = true;
 };
 

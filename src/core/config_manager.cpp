@@ -50,9 +50,15 @@ bool ConfigManager::load_from_file(const std::wstring& filename) {
         hud_.bg_opacity = j.value("bg_opacity", 0.85f);
         hud_.font_scale = j.value("font_scale", 1.0f);
 
+        hud_.output_to_rtss = j.value("output_to_rtss", true);
+        hud_.output_to_dx11_overlay = j.value("output_to_dx11_overlay", true);
+
         hud_.show_fps = j.value("show_fps", true);
         hud_.show_1pct_low = j.value("show_1pct_low", true);
         hud_.show_01pct_low = j.value("show_01pct_low", true);
+        hud_.show_001pct_low = j.value("show_001pct_low", false);
+        hud_.show_min_max = j.value("show_min_max", true);
+        hud_.show_stutters = j.value("show_stutters", true);
         hud_.show_frametime_text = j.value("show_frametime_text", true);
 
         hud_.show_frametime_graph = j.value("show_frametime_graph", true);
@@ -67,6 +73,7 @@ bool ConfigManager::load_from_file(const std::wstring& filename) {
 
         hud_.show_cpu_usage = j.value("show_cpu_usage", true);
         hud_.show_system_ram = j.value("show_system_ram", true);
+        hud_.show_pagefile = j.value("show_pagefile", true);
         hud_.show_secondary_apps = j.value("show_secondary_apps", true);
 
         hotkeys_.toggle_overlay_key = static_cast<UINT>(j.value("toggle_overlay_key", static_cast<int>(VK_F11)));
@@ -93,9 +100,15 @@ bool ConfigManager::save_to_file(const std::wstring& filename) {
         {"bg_opacity", hud_.bg_opacity},
         {"font_scale", hud_.font_scale},
 
+        {"output_to_rtss", hud_.output_to_rtss},
+        {"output_to_dx11_overlay", hud_.output_to_dx11_overlay},
+
         {"show_fps", hud_.show_fps},
         {"show_1pct_low", hud_.show_1pct_low},
         {"show_01pct_low", hud_.show_01pct_low},
+        {"show_001pct_low", hud_.show_001pct_low},
+        {"show_min_max", hud_.show_min_max},
+        {"show_stutters", hud_.show_stutters},
         {"show_frametime_text", hud_.show_frametime_text},
 
         {"show_frametime_graph", hud_.show_frametime_graph},
@@ -110,6 +123,7 @@ bool ConfigManager::save_to_file(const std::wstring& filename) {
 
         {"show_cpu_usage", hud_.show_cpu_usage},
         {"show_system_ram", hud_.show_system_ram},
+        {"show_pagefile", hud_.show_pagefile},
         {"show_secondary_apps", hud_.show_secondary_apps},
 
         {"toggle_overlay_key", static_cast<int>(hotkeys_.toggle_overlay_key)},

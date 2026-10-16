@@ -3,6 +3,7 @@
 #include <shellapi.h>
 #include <numeric>
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 
 #include <evntrace.h>
@@ -92,11 +93,25 @@ void EtwTracker::on_present(uint64_t qpc_timestamp, DWORD /*pid*/) {
 
     // Compute rolling average FPS
     double sum = std::accumulate(recent_frametimes_.begin(), recent_frametimes_.end(), 0.0);
-    current_stats_.avg_fps = 1000.0 / (sum / recent_frametimes_.size());
+    double avg_ft = sum / recent_frametimes_.size();
+    current_stats_.avg_fps = (avg_ft > 0.0) ? (1000.0 / avg_ft) : 0.0;
 
-    // Compute 1% Low and 0.1% Low
+    // Standard deviation of frametimes (pacing jitter)
+    double variance_sum = 0.0;
+    for (double ft : recent_frametimes_) {
+        double diff = ft - avg_ft;
+        variance_sum += diff * diff;
+    }
+    current_stats_.pacing_std_dev_ms = std::sqrt(variance_sum / recent_frametimes_.size());
+
+    // Compute percentiles and min/max
     std::vector<double> sorted_ft(recent_frametimes_.begin(), recent_frametimes_.end());
     std::sort(sorted_ft.begin(), sorted_ft.end());
+
+    if (!sorted_ft.empty()) {
+        current_stats_.max_fps = (sorted_ft.front() > 0.0) ? (1000.0 / sorted_ft.front()) : 0.0;
+        current_stats_.min_fps = (sorted_ft.back() > 0.0) ? (1000.0 / sorted_ft.back()) : 0.0;
+    }
 
     size_t idx_1pct = static_cast<size_t>(sorted_ft.size() * 0.99);
     if (idx_1pct < sorted_ft.size()) {
@@ -107,6 +122,23 @@ void EtwTracker::on_present(uint64_t qpc_timestamp, DWORD /*pid*/) {
     if (idx_01pct < sorted_ft.size()) {
         current_stats_.zero_one_percent_low = 1000.0 / sorted_ft[idx_01pct];
     }
+
+    size_t idx_001pct = static_cast<size_t>(sorted_ft.size() * 0.9999);
+    if (idx_001pct < sorted_ft.size()) {
+        current_stats_.zero_zero_one_percent_low = 1000.0 / sorted_ft[idx_001pct];
+    }
+
+    // Stutter detection:
+    // CapFrameX / Digital Foundry rule: frametime exceeds 2.5x avg or avg + 10ms
+    uint32_t stutters = 0;
+    double stutter_thresh = (avg_ft * 2.5 > avg_ft + 10.0) ? (avg_ft * 2.5) : (avg_ft + 10.0);
+    for (double ft : recent_frametimes_) {
+        if (ft > stutter_thresh) {
+            stutters++;
+        }
+    }
+    current_stats_.stutter_count = stutters;
+    current_stats_.stutter_percentage = (recent_frametimes_.empty()) ? 0.0 : ((static_cast<double>(stutters) / recent_frametimes_.size()) * 100.0);
 }
 
 void EtwTracker::trace_thread_proc() {
