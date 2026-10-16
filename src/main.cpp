@@ -64,6 +64,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         backend.set_overlay_mode(anyperf::OverlayMode::Hidden);
     }
 
+    // Initialize ETW Kernel Tracker once (monitors Present events in background)
+    etw_tracker.start(0);
+
     DWORD active_etw_pid = 0;
 
     auto last_telemetry_time = std::chrono::steady_clock::now();
@@ -113,16 +116,12 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
         auto now = std::chrono::steady_clock::now();
 
-        // 1. Manage ETW target PID according to selected primary process
+        // 1. Manage ETW target PID without blocking the UI thread
         const auto* primary = proc_mon.get_primary_target();
         DWORD primary_pid = (primary && primary->is_alive) ? primary->pid : 0;
         if (primary_pid != active_etw_pid) {
             active_etw_pid = primary_pid;
-            if (active_etw_pid != 0) {
-                etw_tracker.start(active_etw_pid);
-            } else {
-                etw_tracker.stop();
-            }
+            etw_tracker.set_target_pid(active_etw_pid);
         }
 
         // 2. Sample GPU Telemetry (every 250ms)

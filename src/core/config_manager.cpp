@@ -17,6 +17,7 @@ void ConfigManager::init_default_sensors(std::vector<SensorConfigItem>& sensors)
         { "gpu_power", "GPU Power", false, false, "00E5FF" },
         { "gpu_vram", "VRAM", true, false, "00E5FF" },
         { "gpu_mem_clock", "Mem Clock", false, false, "00E5FF" },
+        { "gpu_fan", "GPU Fan", false, false, "00E5FF" },
         { "cpu_usage", "CPU", true, false, "5CC8FF" },
         { "cpu_temp", "CPU Temp", true, false, "5CC8FF" },
         { "cpu_power", "CPU Power", true, false, "5CC8FF" },
@@ -24,6 +25,10 @@ void ConfigManager::init_default_sensors(std::vector<SensorConfigItem>& sensors)
         { "ram_usage", "RAM", true, false, "FFB300" },
         { "pagefile", "Pagefile", false, false, "FFB300" },
         { "fps", "FPS", true, false, "00E676" },
+        { "fps_avg", "AVG FPS", false, false, "00E676" },
+        { "fps_1pct", "1% Low", true, false, "00E676" },
+        { "fps_01pct", "0.1% Low", false, false, "00E676" },
+        { "fps_min_max", "Min/Max FPS", false, false, "00E676" },
         { "frametime", "Frametime", true, true, "00E676" },
         { "bottleneck", "Limit", true, false, "FF3B30" }
     };

@@ -1027,9 +1027,18 @@ void DashboardView::render_overclock_tab(
     ImGui::PushFont(fonts.title);
     ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "GPU TUNING & OVERCLOCK / UNDERVOLT");
     ImGui::PopFont();
-    ImGui::TextColored(ImVec4(0.6f, 0.65f, 0.75f, 1.0f), "High-precision frequency offsets, power limits, and interactive Voltage-Frequency curve editor");
+    ImGui::TextColored(ImVec4(0.6f, 0.65f, 0.75f, 1.0f), "Hardware frequency offsets, safe vendor limits, and interactive Voltage-Frequency undervolting");
     ImGui::Spacing();
 
+    // Vendor & Architecture Detection
+    bool is_amd = hw_ctrl.is_amd() || gpu.is_amd || 
+                  (gpu.adapter_name.find(L"Radeon") != std::wstring::npos) || 
+                  (gpu.adapter_name.find(L"AMD") != std::wstring::npos);
+    bool is_nvidia = hw_ctrl.is_nvidia() || gpu.is_nvidia || 
+                     (gpu.adapter_name.find(L"NVIDIA") != std::wstring::npos) || 
+                     (gpu.adapter_name.find(L"GeForce") != std::wstring::npos);
+
+    // Live Hardware Telemetry Status Card
     ImGui::BeginChild("OcStatusCard", ImVec2(0, 75.0f * s), true);
     ImGui::Columns(4, "OcStatusCols", false);
     
@@ -1059,6 +1068,19 @@ void DashboardView::render_overclock_tab(
     ImGui::Columns(1);
     ImGui::EndChild();
 
+    // Architecture badge and safety guard
+    if (is_amd) {
+        ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.25f, 1.0f), "[AMD RADEON RDNA ARCHITECTURE DETECTED]");
+        ImGui::SameLine();
+        ImGui::TextDisabled("- Safe Overdrive limits: VRAM [-500..+250 MHz], Undervolt [-150..+50 mV], Power [50..120%%]");
+    } else if (is_nvidia) {
+        ImGui::TextColored(ImVec4(0.40f, 0.85f, 0.20f, 1.0f), "[NVIDIA GEFORCE ARCHITECTURE DETECTED]");
+        ImGui::SameLine();
+        ImGui::TextDisabled("- NVIDIA NVAPI limits: VRAM [-1000..+2000 MHz], Power [50..130%%]");
+    } else {
+        ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.85f, 1.0f), "[GENERIC GPU DETECTED]");
+    }
+
     ImGui::Spacing();
 
     ImGui::Checkbox("Enable GPU Overclocking / Undervolting", &oc_cfg.enabled);
@@ -1067,31 +1089,51 @@ void DashboardView::render_overclock_tab(
 
     ImGui::Spacing();
 
+    // Vendor-specific Safe Slider Limits (matching MSI Afterburner)
+    int min_core = is_amd ? -300 : -500;
+    int max_core = is_amd ? 300 : 500;
+    int min_mem = is_amd ? -500 : -1000;
+    int max_mem = is_amd ? 250 : 2000;      // AMD GDDR6 driver limits max memory offset to ~+250 MHz
+    int min_power = 50;
+    int max_power = is_amd ? 120 : 130;     // AMD power slider is -50% to +20%
+    int min_volt = is_amd ? -150 : -100;    // Allows true undervolting down to -150 mV
+    int max_volt = is_amd ? 50 : 100;
+
+    // Sanitize any existing config values if they exceed safe vendor limits
+    if (oc_cfg.memory_clock_offset_mhz > max_mem) oc_cfg.memory_clock_offset_mhz = max_mem;
+    if (oc_cfg.memory_clock_offset_mhz < min_mem) oc_cfg.memory_clock_offset_mhz = min_mem;
+    if (oc_cfg.core_clock_offset_mhz > max_core) oc_cfg.core_clock_offset_mhz = max_core;
+    if (oc_cfg.core_clock_offset_mhz < min_core) oc_cfg.core_clock_offset_mhz = min_core;
+    if (oc_cfg.power_limit_pct > max_power) oc_cfg.power_limit_pct = max_power;
+    if (oc_cfg.voltage_offset_mv > max_volt) oc_cfg.voltage_offset_mv = max_volt;
+    if (oc_cfg.voltage_offset_mv < min_volt) oc_cfg.voltage_offset_mv = min_volt;
+
     ImGui::Text("Core Clock Offset (MHz): %+d MHz", oc_cfg.core_clock_offset_mhz);
-    ImGui::SliderInt("##CoreOffset", &oc_cfg.core_clock_offset_mhz, -500, 500, "%+d MHz");
+    ImGui::SliderInt("##CoreOffset", &oc_cfg.core_clock_offset_mhz, min_core, max_core, "%+d MHz");
 
-    ImGui::Text("Memory Clock Offset (MHz): %+d MHz", oc_cfg.memory_clock_offset_mhz);
-    ImGui::SliderInt("##MemOffset", &oc_cfg.memory_clock_offset_mhz, -1000, 2000, "%+d MHz");
+    ImGui::Text("Memory Clock Offset (MHz): %+d MHz %s", oc_cfg.memory_clock_offset_mhz, is_amd ? "(Safe GDDR6 Limit: +250 MHz)" : "");
+    ImGui::SliderInt("##MemOffset", &oc_cfg.memory_clock_offset_mhz, min_mem, max_mem, "%+d MHz");
 
-    ImGui::Text("Power Limit (%%): %d%%", oc_cfg.power_limit_pct);
-    ImGui::SliderInt("##PowerLimit", &oc_cfg.power_limit_pct, 50, 130, "%d %%");
+    ImGui::Text("Power Limit (%%): %d%% (Range: %d%% - %d%%)", oc_cfg.power_limit_pct, min_power, max_power);
+    ImGui::SliderInt("##PowerLimit", &oc_cfg.power_limit_pct, min_power, max_power, "%d %%");
 
     ImGui::Text("Temperature Limit (C): %d C", oc_cfg.temp_limit_c);
     ImGui::SliderInt("##TempLimit", &oc_cfg.temp_limit_c, 65, 90, "%d C");
 
-    ImGui::Text("Core Voltage Boost (mV): %+d mV", oc_cfg.voltage_offset_mv);
-    ImGui::SliderInt("##VoltOffset", &oc_cfg.voltage_offset_mv, 0, 100, "%+d mV");
+    const char* volt_tag = (oc_cfg.voltage_offset_mv < 0) ? "[UNDERVOLT - Cooler & Quiet]" : (oc_cfg.voltage_offset_mv > 0 ? "[OVERVOLT]" : "[STOCK VBIOS]");
+    ImGui::Text("Core Voltage Offset / Undervolt (mV): %+d mV %s", oc_cfg.voltage_offset_mv, volt_tag);
+    ImGui::SliderInt("##VoltOffset", &oc_cfg.voltage_offset_mv, min_volt, max_volt, "%+d mV");
 
     ImGui::Spacing();
 
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "VOLTAGE-FREQUENCY (V/F) CURVE EDITOR (Undevolt):");
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "VOLTAGE-FREQUENCY (V/F) CURVE EDITOR (Interactive Undervolt):");
     if (ImPlot::BeginPlot("##VfCurvePlot", ImVec2(-1, 200.0f * s), ImPlotFlags_NoTitle | ImPlotFlags_NoBoxSelect)) {
         ImPlot::SetupAxes("Core Voltage (mV)", "Frequency Offset (MHz)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
-        ImPlot::SetupAxesLimits(650.0, 1150.0, -100.0, 300.0, ImPlotCond_Always);
+        ImPlot::SetupAxesLimits(650.0, 1150.0, -150.0, 300.0, ImPlotCond_Always);
 
         std::vector<double> v_xs, v_ys;
         for (const auto& vf : oc_cfg.vf_curve_points) {
-            v_xs.push_back(static_cast<double>(vf.voltage_mv));
+            v_xs.push_back(static_cast<double>(vf.voltage_mv + oc_cfg.voltage_offset_mv));
             v_ys.push_back(static_cast<double>(vf.freq_offset_mhz + oc_cfg.core_clock_offset_mhz));
         }
 

@@ -15,6 +15,8 @@ struct GpuMetrics {
     bool has_nvml = false;
     bool has_pdh = false;
     bool has_adl = false;
+    bool is_amd = false;
+    bool is_nvidia = false;
 
     // Core Metrics
     int core_usage_percent = 0;        // GPU Core load % (0-100)
@@ -31,6 +33,10 @@ struct GpuMetrics {
     int core_clock_mhz = 0;
     int memory_clock_mhz = 0;
     int power_watts = 0;
+
+    // Fan Telemetry
+    int fan_speed_rpm = 0;
+    int fan_speed_percent = 0;
 };
 
 class GpuMonitor {
@@ -56,7 +62,8 @@ private:
     bool init_adl();
     void update_adl();
 
-    void update_dxgi();
+    void init_dxgi();
+    void update_vram_dxgi();
 
     GpuMetrics metrics_;
 
@@ -86,7 +93,7 @@ private:
     pfn_nvmlDeviceGetPowerUsage nvmlDeviceGetPowerUsage_ = nullptr;
     pfn_nvmlDeviceGetFieldValues nvmlDeviceGetFieldValues_ = nullptr;
 
-    // Windows PDH Universal GPU Engine Counters
+    // Windows PDH Universal GPU Engine Counters (Fallback only)
     PDH_HQUERY pdh_query_ = nullptr;
     PDH_HCOUNTER pdh_gpu_counter_ = nullptr;
     PDH_HCOUNTER pdh_vram_counter_ = nullptr;
@@ -96,9 +103,12 @@ private:
     HMODULE h_adl_ = nullptr;
     void* adl_context_ = nullptr;
     int adl_adapter_index_ = -1;
+    using pfn_ADL2_New_QueryPMLogData_Get = int(*)(void*, int, void*);
+    pfn_ADL2_New_QueryPMLogData_Get adl_pmlog_query_ = nullptr;
 
-    // Cached DXGI factory to avoid expensive re-creation every update
+    // Cached DXGI adapter for instant VRAM query
     IDXGIFactory1* cached_dxgi_factory_ = nullptr;
+    void* cached_dxgi_adapter3_ = nullptr;
     bool has_hw_hotspot_ = false;
 };
 

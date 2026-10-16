@@ -45,10 +45,12 @@ struct AdlAdapterInfo {
 };
 
 GpuMonitor::GpuMonitor() {
-    update_dxgi();
+    init_dxgi();
     init_nvml();
-    init_pdh();
     init_adl();
+    if (!metrics_.has_nvml && !metrics_.has_adl) {
+        init_pdh();
+    }
 }
 
 GpuMonitor::~GpuMonitor() {
@@ -66,6 +68,10 @@ GpuMonitor::~GpuMonitor() {
     if (h_adl_) {
         FreeLibrary(h_adl_);
         h_adl_ = nullptr;
+    }
+    if (cached_dxgi_adapter3_) {
+        reinterpret_cast<IDXGIAdapter3*>(cached_dxgi_adapter3_)->Release();
+        cached_dxgi_adapter3_ = nullptr;
     }
     if (cached_dxgi_factory_) {
         cached_dxgi_factory_->Release();
@@ -111,6 +117,7 @@ bool GpuMonitor::init_nvml() {
     }
 
     metrics_.has_nvml = true;
+    metrics_.is_nvidia = true;
     metrics_.is_available = true;
     return true;
 }
@@ -279,71 +286,162 @@ bool GpuMonitor::init_adl() {
 
     using pfn_ADL2_Main_Control_Create = int(*)(void*(__stdcall*)(int), int, void**);
     auto pCreate = reinterpret_cast<pfn_ADL2_Main_Control_Create>(GetProcAddress(h_adl_, "ADL2_Main_Control_Create"));
-    if (pCreate && pCreate(ADL_Main_Memory_Alloc, 1, &adl_context_) == 0 && adl_context_) {
-        metrics_.has_adl = true;
-        return true;
+    if (!pCreate || pCreate(ADL_Main_Memory_Alloc, 1, &adl_context_) != 0 || !adl_context_) {
+        return false;
     }
 
-    return false;
+    adl_pmlog_query_ = reinterpret_cast<pfn_ADL2_New_QueryPMLogData_Get>(
+        GetProcAddress(h_adl_, "ADL2_New_QueryPMLogData_Get")
+    );
+
+    using pfn_ADL2_Adapter_NumberOfAdapters_Get = int(*)(void*, int*);
+    using pfn_ADL2_Adapter_AdapterInfo_Get = int(*)(void*, void*, int);
+    auto pNumAdapters = reinterpret_cast<pfn_ADL2_Adapter_NumberOfAdapters_Get>(GetProcAddress(h_adl_, "ADL2_Adapter_NumberOfAdapters_Get"));
+    auto pAdapterInfo = reinterpret_cast<pfn_ADL2_Adapter_AdapterInfo_Get>(GetProcAddress(h_adl_, "ADL2_Adapter_AdapterInfo_Get"));
+
+    adl_adapter_index_ = 0;
+    if (pNumAdapters && pAdapterInfo) {
+        int numAdapters = 0;
+        if (pNumAdapters(adl_context_, &numAdapters) == 0 && numAdapters > 0) {
+            std::vector<AdlAdapterInfo> adapters(numAdapters);
+            if (pAdapterInfo(adl_context_, adapters.data(), static_cast<int>(sizeof(AdlAdapterInfo) * numAdapters)) == 0) {
+                for (int i = 0; i < numAdapters; ++i) {
+                    if (adapters[i].iPresent) {
+                        adl_adapter_index_ = adapters[i].iAdapterIndex;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    metrics_.has_adl = true;
+    metrics_.is_amd = true;
+    metrics_.is_available = true;
+    return true;
 }
 
 void GpuMonitor::update_adl() {
     if (!h_adl_ || !adl_context_) return;
 
-    // Advanced temperature probes via ADL2 OverdriveN
+    int adapter_idx = (adl_adapter_index_ >= 0) ? adl_adapter_index_ : 0;
+
+    // 1. High-speed ADL PMLog query (Radeon RX 5000 / 6000 / 7000 Series, RDNA 1/2/3)
+    if (adl_pmlog_query_) {
+        struct ADLPMLogDataOutput {
+            int size;
+            struct { int supported; int value; } sensors[256];
+        } pmLog{};
+        pmLog.size = sizeof(pmLog);
+
+        if (adl_pmlog_query_(adl_context_, adapter_idx, &pmLog) == 0) {
+            // Sensor 1: Core Clock (MHz)
+            if (pmLog.sensors[1].supported && pmLog.sensors[1].value > 0) {
+                metrics_.core_clock_mhz = pmLog.sensors[1].value;
+            }
+            // Sensor 2: Memory Clock (MHz)
+            if (pmLog.sensors[2].supported && pmLog.sensors[2].value > 0) {
+                metrics_.memory_clock_mhz = pmLog.sensors[2].value;
+            }
+            // Sensor 8: Edge / Core Temperature (C)
+            if (pmLog.sensors[8].supported && pmLog.sensors[8].value > 0) {
+                metrics_.temperature_c = pmLog.sensors[8].value;
+            }
+            // Sensor 9: Junction / Hotspot Temperature (C)
+            if (pmLog.sensors[9].supported && pmLog.sensors[9].value > 0) {
+                metrics_.hotspot_temp_c = pmLog.sensors[9].value;
+                has_hw_hotspot_ = true;
+            }
+            // Sensor 10: Memory / VRAM Temperature (C)
+            if (pmLog.sensors[10].supported && pmLog.sensors[10].value > 0) {
+                metrics_.vram_temp_c = pmLog.sensors[10].value;
+            }
+            // Sensor 19: Core Load (%)
+            if (pmLog.sensors[19].supported) {
+                metrics_.core_usage_percent = pmLog.sensors[19].value;
+            }
+            // Sensor 20: Memory Controller Load (%)
+            if (pmLog.sensors[20].supported) {
+                metrics_.memory_controller_percent = pmLog.sensors[20].value;
+            }
+            // Sensor 23: Board / ASIC Power (Watts)
+            if (pmLog.sensors[23].supported && pmLog.sensors[23].value > 0) {
+                metrics_.power_watts = pmLog.sensors[23].value;
+            }
+            // Sensor 25: Fan Speed (RPM)
+            if (pmLog.sensors[25].supported && pmLog.sensors[25].value > 0) {
+                metrics_.fan_speed_rpm = pmLog.sensors[25].value;
+            }
+            // Sensor 26: Fan Speed (%)
+            if (pmLog.sensors[26].supported && pmLog.sensors[26].value >= 0) {
+                metrics_.fan_speed_percent = pmLog.sensors[26].value;
+            }
+            return;
+        }
+    }
+
+    // 2. Fallback for legacy GCN / OverdriveN cards
     auto pTemp = reinterpret_cast<int(*)(void*, int, int, int*)>(GetProcAddress(h_adl_, "ADL2_OverdriveN_Temperature_Get"));
     if (pTemp) {
         int tempVal = 0;
-        // Sensor 1: Edge (Core)
-        if (pTemp(adl_context_, 0, 1, &tempVal) == 0 && tempVal > 0) {
+        if (pTemp(adl_context_, adapter_idx, 1, &tempVal) == 0 && tempVal > 0) {
             metrics_.temperature_c = tempVal / 1000;
         }
-        // Sensor 2: Memory (VRAM)
         tempVal = 0;
-        if (pTemp(adl_context_, 0, 2, &tempVal) == 0 && tempVal > 0) {
+        if (pTemp(adl_context_, adapter_idx, 2, &tempVal) == 0 && tempVal > 0) {
             metrics_.vram_temp_c = tempVal / 1000;
         }
-        // Sensor 3: Hotspot (Junction)
         tempVal = 0;
-        if (pTemp(adl_context_, 0, 3, &tempVal) == 0 && tempVal > 0) {
+        if (pTemp(adl_context_, adapter_idx, 3, &tempVal) == 0 && tempVal > 0) {
             metrics_.hotspot_temp_c = tempVal / 1000;
             has_hw_hotspot_ = true;
         }
     }
 }
 
-void GpuMonitor::update_dxgi() {
-    // Create factory once and cache it
-    if (!cached_dxgi_factory_) {
-        if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&cached_dxgi_factory_)))) return;
-    }
+void GpuMonitor::init_dxgi() {
+    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&cached_dxgi_factory_)))) return;
 
     IDXGIAdapter1* pAdapter = nullptr;
     if (SUCCEEDED(cached_dxgi_factory_->EnumAdapters1(0, &pAdapter))) {
         DXGI_ADAPTER_DESC1 desc{};
         if (SUCCEEDED(pAdapter->GetDesc1(&desc))) {
             metrics_.adapter_name = desc.Description;
-            // Physical dedicated VRAM (e.g. 6144 MB for RX 5600 XT)
             if (desc.DedicatedVideoMemory > 0) {
                 metrics_.vram_total_bytes = desc.DedicatedVideoMemory;
             }
             metrics_.is_available = true;
         }
+        IDXGIAdapter3* pAdapter3 = nullptr;
+        if (SUCCEEDED(pAdapter->QueryInterface(__uuidof(IDXGIAdapter3), reinterpret_cast<void**>(&pAdapter3)))) {
+            cached_dxgi_adapter3_ = pAdapter3;
+        }
         pAdapter->Release();
     }
 }
 
+void GpuMonitor::update_vram_dxgi() {
+    if (cached_dxgi_adapter3_) {
+        auto* pAdapter3 = reinterpret_cast<IDXGIAdapter3*>(cached_dxgi_adapter3_);
+        DXGI_QUERY_VIDEO_MEMORY_INFO info{};
+        if (SUCCEEDED(pAdapter3->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &info))) {
+            metrics_.vram_used_bytes = static_cast<size_t>(info.CurrentUsage);
+            if (info.Budget > 0 && metrics_.vram_total_bytes == 0) {
+                metrics_.vram_total_bytes = static_cast<size_t>(info.Budget);
+            }
+        }
+    }
+}
+
 void GpuMonitor::update() {
-    update_dxgi();
+    update_vram_dxgi();
 
     if (metrics_.has_nvml) {
         update_nvml();
-    }
-
-    update_pdh();
-
-    if (metrics_.has_adl) {
+    } else if (metrics_.has_adl) {
         update_adl();
+    } else if (metrics_.has_pdh) {
+        update_pdh();
     }
 }
 

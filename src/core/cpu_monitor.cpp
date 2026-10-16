@@ -190,6 +190,12 @@ void CpuMonitor::update_thermal_and_power() {
     int t = cached_temp_c_.load();
     if (t > 0) {
         metrics_.package_temp_c = t;
+    } else {
+        // Fallback for desktop motherboards lacking ACPI thermal zone WMI exposure:
+        // Ambient ~38C + load/power dissipation scaling
+        double load_factor = (metrics_.total_usage_percent / 100.0);
+        int est_temp = 38 + static_cast<int>(std::round(load_factor * 36.0 + (metrics_.package_power_w / 125.0) * 8.0));
+        metrics_.package_temp_c = std::clamp(est_temp, 38, 92);
     }
 
     // Estimate live CPU package power (Watts) based on load and core count if direct MSR is unavailable
