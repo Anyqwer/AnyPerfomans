@@ -700,8 +700,9 @@ bool RTSSBridge::update_osd(
                     }
                 }
             } else if (s.id == "cpu_temp") {
-                int temp = (cpu.package_temp_c > 0) ? cpu.package_temp_c : (38 + static_cast<int>(cpu.total_usage_percent * 0.38));
-                ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << temp << " C<C>\n";
+                if (cpu.package_temp_c > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << cpu.package_temp_c << " C<C>\n";
+                }
             } else if (s.id == "cpu_power") {
                 if (cpu.package_power_w > 0) {
                     ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << cpu.package_power_w << " W<C>\n";

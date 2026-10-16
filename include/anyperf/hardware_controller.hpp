@@ -27,8 +27,18 @@ public:
     void update_fan_curve(const FanCurveConfig& cfg, int current_gpu_temp);
 
     // Overclocking / Undervolting
+    enum class HardwareOcStatus {
+        NotApplied,
+        FullyApplied,
+        PowerLimitOnly,
+        Unsupported
+    };
+
     bool apply_overclock(const OverclockConfig& oc);
     bool reset_overclock();
+
+    HardwareOcStatus get_last_oc_status() const { return last_oc_status_; }
+    const std::string& get_last_oc_message() const { return last_oc_message_; }
 
     int get_current_fan_speed_pct() const { return last_fan_speed_; }
     bool is_fan_manual() const { return is_manual_fan_; }
@@ -52,6 +62,10 @@ private:
     int last_fan_speed_ = -1;
     int last_fan_temp_ = 0;
     bool is_manual_fan_ = false;
+
+    // Overclocking State
+    HardwareOcStatus last_oc_status_ = HardwareOcStatus::NotApplied;
+    std::string last_oc_message_ = "No active overclock profile applied.";
 };
 
 } // namespace anyperf

@@ -191,24 +191,13 @@ void CpuMonitor::update_thermal_and_power() {
     if (t > 0) {
         metrics_.package_temp_c = t;
     } else {
-        // Fallback for desktop motherboards lacking ACPI thermal zone WMI exposure:
-        // Ambient ~38C + load/power dissipation scaling
-        double load_factor = (metrics_.total_usage_percent / 100.0);
-        int est_temp = 38 + static_cast<int>(std::round(load_factor * 36.0 + (metrics_.package_power_w / 125.0) * 8.0));
-        metrics_.package_temp_c = std::clamp(est_temp, 38, 92);
+        // Honest telemetry: if motherboard ACPI thermal zones are not exposed via WMI,
+        // do NOT simulate or invent temperature from CPU load. Report 0 (N/A).
+        metrics_.package_temp_c = 0;
     }
 
-    // Estimate live CPU package power (Watts) based on load and core count if direct MSR is unavailable
-    // Typical modern desktop x64 CPU: 15W idle, up to 65W - 125W load
-    double base_idle_watts = 15.0;
-    double max_boost_watts = 65.0;
-    if (metrics_.logical_core_count >= 16) {
-        max_boost_watts = 125.0;
-    } else if (metrics_.logical_core_count >= 8) {
-        max_boost_watts = 85.0;
-    }
-    double live_watts = base_idle_watts + (metrics_.total_usage_percent / 100.0) * (max_boost_watts - base_idle_watts);
-    metrics_.package_power_w = static_cast<int>(std::round(live_watts));
+    // Honest telemetry: package power is 0 unless exposed by real hardware counters/MSR.
+    metrics_.package_power_w = 0;
 }
 
 void CpuMonitor::update() {

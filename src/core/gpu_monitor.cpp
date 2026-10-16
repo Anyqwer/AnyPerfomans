@@ -173,11 +173,10 @@ void GpuMonitor::update_nvml() {
         }
     }
 
-    // Hotspot temperature: on NVIDIA cards without dedicated HW hotspot sensor,
-    // recalculate junction temperature dynamically every tick based on live core load
-    if (!has_hw_hotspot_ && metrics_.temperature_c > 0) {
-        int delta = (metrics_.core_usage_percent > 10) ? static_cast<int>(std::round(12.0 * (metrics_.core_usage_percent / 100.0))) : 4;
-        metrics_.hotspot_temp_c = metrics_.temperature_c + delta;
+    // Hotspot temperature: only report if a genuine hardware sensor was returned by NVML / ADL PMLog.
+    // Never simulate or estimate hotspot from core load.
+    if (!has_hw_hotspot_) {
+        metrics_.hotspot_temp_c = 0;
     }
 
     if (nvmlDeviceGetMemoryInfo_) {

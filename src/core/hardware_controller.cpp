@@ -282,6 +282,62 @@ void HardwareController::update_fan_curve(const FanCurveConfig& cfg, int current
     }
 }
 
+#pragma pack(push, 8)
+struct NV_GPU_PSTATE20_CLOCK_ENTRY_V1 {
+    unsigned int domainId;
+    unsigned int typeId;
+    unsigned int bIsEditable : 1;
+    unsigned int reserved : 31;
+    struct {
+        int value;
+        struct {
+            int min;
+            int max;
+        } valueRange;
+    } freqDelta_kHz;
+    union {
+        struct {
+            unsigned int freq_kHz;
+        } single;
+        struct {
+            unsigned int minFreq_kHz;
+            unsigned int maxFreq_kHz;
+            unsigned int domainId;
+            unsigned int minVoltage_uV;
+            unsigned int maxVoltage_uV;
+        } range;
+    } data;
+};
+
+struct NV_GPU_PSTATE20_BASE_VOLTAGE_ENTRY_V1 {
+    unsigned int domainId;
+    unsigned int bIsEditable : 1;
+    unsigned int reserved : 31;
+    int voltDelta_uV;
+    union {
+        struct {
+            unsigned int volt_uV;
+        } single;
+    } data;
+};
+
+struct NV_GPU_PERF_PSTATES20_INFO_V1 {
+    unsigned int version;
+    unsigned int bIsEditable : 1;
+    unsigned int reserved : 31;
+    unsigned int numPstates;
+    unsigned int numClocks;
+    unsigned int numBaseVoltages;
+    struct {
+        unsigned int pstateId;
+        unsigned int bIsEditable : 1;
+        unsigned int reserved : 31;
+        NV_GPU_PSTATE20_CLOCK_ENTRY_V1 clocks[8];
+        NV_GPU_PSTATE20_BASE_VOLTAGE_ENTRY_V1 baseVoltages[4];
+    } pstates[16];
+};
+#pragma pack(pop)
+
 bool HardwareController::apply_overclock(const OverclockConfig& oc) {
     if (!oc.enabled) {
         return reset_overclock();
@@ -289,7 +345,7 @@ bool HardwareController::apply_overclock(const OverclockConfig& oc) {
 
     bool applied = false;
 
-    // Apply NVIDIA Clock offsets and Power limit via NVAPI
+    // 1. NVIDIA Overclocking & P-States 2.0 via NVAPI
     if (has_nvapi_ && nv_physical_gpu_ && h_nvapi_) {
         auto q = (pfn_nvapi_QueryInterface)GetProcAddress(h_nvapi_, "nvapi_QueryInterface");
         if (q) {
@@ -308,17 +364,56 @@ bool HardwareController::apply_overclock(const OverclockConfig& oc) {
             if (pfnSetPower) {
                 pfnSetPower(nv_physical_gpu_, &pl);
             }
-            applied = true;
+
+            // Apply Core & Memory Clock Offsets via NvAPI_GPU_SetPstates20
+            auto pfnSetPstates = (int(*)(void*, void*))q(NVAPI_ID_GPU_SET_PSTATES20);
+            if (pfnSetPstates) {
+                NV_GPU_PERF_PSTATES20_INFO_V1 pstates{};
+                pstates.version = sizeof(NV_GPU_PERF_PSTATES20_INFO_V1) | (1 << 16);
+                pstates.numPstates = 1;
+                pstates.numClocks = 2;
+                pstates.bIsEditable = 1;
+
+                pstates.pstates[0].pstateId = 0; // P0 performance state
+                pstates.pstates[0].bIsEditable = 1;
+
+                // Domain 0: Graphics Core Clock
+                pstates.pstates[0].clocks[0].domainId = 0;
+                pstates.pstates[0].clocks[0].typeId = 0; // single frequency delta
+                pstates.pstates[0].clocks[0].bIsEditable = 1;
+                pstates.pstates[0].clocks[0].freqDelta_kHz.value = oc.core_clock_offset_mhz * 1000;
+
+                // Domain 4: Memory Clock
+                pstates.pstates[0].clocks[1].domainId = 4;
+                pstates.pstates[0].clocks[1].typeId = 0;
+                pstates.pstates[0].clocks[1].bIsEditable = 1;
+                pstates.pstates[0].clocks[1].freqDelta_kHz.value = oc.memory_clock_offset_mhz * 1000;
+
+                int res = pfnSetPstates(nv_physical_gpu_, &pstates);
+                if (res == 0) {
+                    last_oc_status_ = HardwareOcStatus::FullyApplied;
+                    last_oc_message_ = "NVIDIA NVAPI: Clock offsets and power limits applied successfully.";
+                    applied = true;
+                } else {
+                    last_oc_status_ = HardwareOcStatus::PowerLimitOnly;
+                    last_oc_message_ = "NVIDIA NVAPI: Power limit applied. P-States returned code " + std::to_string(res);
+                    applied = true;
+                }
+            }
         }
     }
 
-    // Apply AMD Power limit & Overdrive via ADL
+    // 2. AMD Overdrive Power limit via ADL
     if (has_adl_ && adl_context_ && h_adl_) {
         auto pSetPower = (pfn_ADL2_OverdriveN_PowerLimit_Set)GetProcAddress(h_adl_, "ADL2_OverdriveN_PowerLimit_Set");
         if (pSetPower) {
             int power_percent = oc.power_limit_pct - 100; // e.g. +10%
-            pSetPower(adl_context_, adl_adapter_index_, &power_percent);
-            applied = true;
+            int ret = pSetPower(adl_context_, adl_adapter_index_, &power_percent);
+            if (ret == 0) {
+                last_oc_status_ = HardwareOcStatus::PowerLimitOnly;
+                last_oc_message_ = "AMD ADL: Power limit applied. Note: User-mode ADL on RDNA restricts manual clock lock without AMD Adrenalin or Ring-0 driver.";
+                applied = true;
+            }
         }
     }
 
@@ -326,14 +421,60 @@ bool HardwareController::apply_overclock(const OverclockConfig& oc) {
 }
 
 bool HardwareController::reset_overclock() {
-    OverclockConfig default_oc;
-    default_oc.enabled = false;
-    default_oc.core_clock_offset_mhz = 0;
-    default_oc.memory_clock_offset_mhz = 0;
-    default_oc.power_limit_pct = 100;
-    default_oc.temp_limit_c = 83;
-    default_oc.voltage_offset_mv = 0;
-    return true;
+    bool reset_done = false;
+
+    if (has_nvapi_ && nv_physical_gpu_ && h_nvapi_) {
+        auto q = (pfn_nvapi_QueryInterface)GetProcAddress(h_nvapi_, "nvapi_QueryInterface");
+        if (q) {
+            // 1. Reset Power Limit to 100%
+            struct NV_GPU_POWER_LIMIT_ENTRY { unsigned int limitValue; };
+            struct NV_GPU_POWER_LIMITS {
+                unsigned int version;
+                unsigned int flags;
+                NV_GPU_POWER_LIMIT_ENTRY entries[4];
+            } pl{};
+            pl.version = sizeof(NV_GPU_POWER_LIMITS) | (1 << 16);
+            pl.entries[0].limitValue = 100000; // 100%
+            auto pfnSetPower = (int(*)(void*, void*))q(NVAPI_ID_GPU_POWER_SET_LIMITS);
+            if (pfnSetPower) pfnSetPower(nv_physical_gpu_, &pl);
+
+            // 2. Reset Clock Offsets to 0
+            auto pfnSetPstates = (int(*)(void*, void*))q(NVAPI_ID_GPU_SET_PSTATES20);
+            if (pfnSetPstates) {
+                NV_GPU_PERF_PSTATES20_INFO_V1 pstates{};
+                pstates.version = sizeof(NV_GPU_PERF_PSTATES20_INFO_V1) | (1 << 16);
+                pstates.numPstates = 1;
+                pstates.numClocks = 2;
+                pstates.bIsEditable = 1;
+                pstates.pstates[0].pstateId = 0;
+                pstates.pstates[0].bIsEditable = 1;
+
+                pstates.pstates[0].clocks[0].domainId = 0;
+                pstates.pstates[0].clocks[0].bIsEditable = 1;
+                pstates.pstates[0].clocks[0].freqDelta_kHz.value = 0;
+
+                pstates.pstates[0].clocks[1].domainId = 4;
+                pstates.pstates[0].clocks[1].bIsEditable = 1;
+                pstates.pstates[0].clocks[1].freqDelta_kHz.value = 0;
+
+                pfnSetPstates(nv_physical_gpu_, &pstates);
+            }
+            reset_done = true;
+        }
+    }
+
+    if (has_adl_ && adl_context_ && h_adl_) {
+        auto pSetPower = (pfn_ADL2_OverdriveN_PowerLimit_Set)GetProcAddress(h_adl_, "ADL2_OverdriveN_PowerLimit_Set");
+        if (pSetPower) {
+            int zero_offset = 0;
+            pSetPower(adl_context_, adl_adapter_index_, &zero_offset);
+            reset_done = true;
+        }
+    }
+
+    last_oc_status_ = HardwareOcStatus::NotApplied;
+    last_oc_message_ = "Hardware clock offsets and power limits reset to factory VBIOS defaults.";
+    return reset_done;
 }
 
 } // namespace anyperf

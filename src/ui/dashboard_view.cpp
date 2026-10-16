@@ -524,9 +524,13 @@ void DashboardView::render_summary_cards(
     ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.90f, 1.0f), "LOAD (C%d: %.0f%%)", cpu.max_core_index, cpu.max_core_usage);
 
     if (cpu.package_temp_c > 0) {
-        ImGui::TextColored(ImVec4(1.00f, 0.65f, 0.20f, 1.0f), "Package: %d C | Power: %d W", cpu.package_temp_c, cpu.package_power_w);
+        if (cpu.package_power_w > 0) {
+            ImGui::TextColored(ImVec4(1.00f, 0.65f, 0.20f, 1.0f), "Package: %d C | Power: %d W", cpu.package_temp_c, cpu.package_power_w);
+        } else {
+            ImGui::TextColored(ImVec4(1.00f, 0.65f, 0.20f, 1.0f), "Package: %d C | Cores: %u", cpu.package_temp_c, cpu.logical_core_count);
+        }
     } else {
-        ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.85f, 1.0f), "Power: ~%d W | Cores: %u", cpu.package_power_w, cpu.logical_core_count);
+        ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.85f, 1.0f), "Package Temp: N/A | Cores: %u", cpu.logical_core_count);
     }
 
     if (primary && primary->is_alive) {
@@ -1079,6 +1083,13 @@ void DashboardView::render_overclock_tab(
         ImGui::TextDisabled("- NVIDIA NVAPI limits: VRAM [-1000..+2000 MHz], Power [50..130%%]");
     } else {
         ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.85f, 1.0f), "[GENERIC GPU DETECTED]");
+    }
+
+    if (hw_ctrl.get_last_oc_status() != HardwareController::HardwareOcStatus::NotApplied) {
+        ImVec4 col = (hw_ctrl.get_last_oc_status() == HardwareController::HardwareOcStatus::FullyApplied)
+            ? ImVec4(0.0f, 0.9f, 0.5f, 1.0f)
+            : ImVec4(1.0f, 0.75f, 0.2f, 1.0f);
+        ImGui::TextColored(col, "Hardware Driver Status: %s", hw_ctrl.get_last_oc_message().c_str());
     }
 
     ImGui::Spacing();
