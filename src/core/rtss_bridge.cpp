@@ -9,7 +9,11 @@
 namespace anyperf {
 
 // Self-contained RTSS Shared Memory V2 structures
-#define RTSS_SIGNATURE 0x53535452 // 'RTSS' in little-endian
+#define RTSS_SIGNATURE 0x52545353 // 'RTSS' in MSVC
+
+static inline bool is_rtss_signature_valid(DWORD sig) {
+    return sig == 0x52545353 || sig == 0x53535452 || sig == 'RTSS';
+}
 
 #pragma pack(push, 1)
 
@@ -193,7 +197,7 @@ bool RTSSBridge::connect() {
     }
 
     auto* pHeader = reinterpret_cast<RTSS_HEADER*>(map_addr_);
-    if (pHeader->dwSignature != RTSS_SIGNATURE || pHeader->dwVersion < 0x00020000) {
+    if (!is_rtss_signature_valid(pHeader->dwSignature) || pHeader->dwVersion < 0x00020000) {
         disconnect();
         return false;
     }
@@ -220,7 +224,7 @@ bool RTSSBridge::write_to_shared_memory(const char* text) {
     }
 
     auto* pHeader = reinterpret_cast<RTSS_HEADER*>(map_addr_);
-    if (!pHeader || pHeader->dwSignature != RTSS_SIGNATURE) {
+    if (!pHeader || !is_rtss_signature_valid(pHeader->dwSignature)) {
         disconnect();
         return false;
     }
@@ -291,9 +295,9 @@ void RTSSBridge::clear_osd() {
     if (!is_connected_ && !connect()) return;
 
     auto* pHeader = reinterpret_cast<RTSS_HEADER*>(map_addr_);
-    if (!pHeader || pHeader->dwSignature != RTSS_SIGNATURE) return;
+    if (!pHeader || !is_rtss_signature_valid(pHeader->dwSignature)) return;
 
-    for (DWORD entry = 1; entry < pHeader->dwOSDArrSize; ++entry) {
+    for (DWORD entry = 0; entry < pHeader->dwOSDArrSize; ++entry) {
         auto* pEntry = reinterpret_cast<RTSS_OSD_SLOT*>(
             reinterpret_cast<LPBYTE>(pHeader) + pHeader->dwOSDArrOffset + entry * pHeader->dwOSDEntrySize
         );
