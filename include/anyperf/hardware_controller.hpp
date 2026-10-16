@@ -43,6 +43,16 @@ public:
     int get_current_fan_speed_pct() const { return last_fan_speed_; }
     bool is_fan_manual() const { return is_manual_fan_; }
 
+    // AMD Overdrive 8 Capabilities & Defaults
+    bool has_amd_od8() const { return has_adl_od8_; }
+    int get_amd_def_core_mhz() const { return adl_od8_def_core_mhz_; }
+    int get_amd_max_core_mhz() const { return adl_od8_max_core_mhz_; }
+    int get_amd_def_mem_mhz() const { return adl_od8_def_mem_mhz_; }
+    int get_amd_max_mem_mhz() const { return adl_od8_max_mem_mhz_; }
+    int get_amd_def_volt_mv() const { return adl_od8_def_volt_mv_; }
+    int get_amd_min_volt_mv() const { return adl_od8_min_volt_mv_; }
+    int get_amd_max_volt_mv() const { return adl_od8_max_volt_mv_; }
+
 private:
     bool init_nvapi();
     bool init_adl();
@@ -57,6 +67,16 @@ private:
     void* adl_context_ = nullptr;
     int adl_adapter_index_ = -1;
     bool has_adl_ = false;
+
+    // AMD Overdrive 8 cached limits & factory defaults
+    bool has_adl_od8_ = false;
+    int adl_od8_def_core_mhz_ = 1780;
+    int adl_od8_max_core_mhz_ = 1820;
+    int adl_od8_def_mem_mhz_ = 1750;
+    int adl_od8_max_mem_mhz_ = 1860;
+    int adl_od8_def_volt_mv_ = 1008;
+    int adl_od8_min_volt_mv_ = 800;
+    int adl_od8_max_volt_mv_ = 1050;
 
     // Fan Loop State
     int last_fan_speed_ = -1;
