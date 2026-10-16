@@ -15,6 +15,7 @@ namespace anyperf {
 
 class EtwTracker;
 class Dx11Backend;
+class RTSSBridge;
 struct AppFonts;
 
 class DashboardView {
@@ -28,6 +29,7 @@ public:
         EtwTracker& etw_tracker,
         GpuMonitor& gpu_mon,
         ConfigManager& config_mgr,
+        RTSSBridge& rtss_bridge,
         Dx11Backend& backend,
         const FrameStats& frame_stats,
         OverlayMode& current_mode
@@ -82,6 +84,7 @@ private:
     );
     void render_settings_tab(
         ConfigManager& config_mgr,
+        RTSSBridge& rtss_bridge,
         const AppFonts& fonts
     );
     void render_rtss_mini_hud(

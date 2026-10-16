@@ -3,6 +3,8 @@
 #include <sstream>
 #include <iomanip>
 #include <intrin.h>
+#include <tlhelp32.h>
+#include <shellapi.h>
 
 namespace anyperf {
 
@@ -46,6 +48,112 @@ struct RTSS_APP_SLOT {
 
 #pragma pack(pop)
 
+static std::string strip_rtss_tags(const char* input) {
+    if (!input) return "";
+    std::string out;
+    bool in_tag = false;
+    for (size_t i = 0; input[i] != '\0'; ++i) {
+        if (input[i] == '<') {
+            in_tag = true;
+        } else if (input[i] == '>') {
+            in_tag = false;
+        } else if (!in_tag) {
+            out += input[i];
+        }
+    }
+    return out;
+}
+
+bool RTSSBridge::is_rtss_process_running() {
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap == INVALID_HANDLE_VALUE) return false;
+
+    PROCESSENTRY32W pe{};
+    pe.dwSize = sizeof(pe);
+    bool found = false;
+
+    if (Process32FirstW(hSnap, &pe)) {
+        do {
+            if (_wcsicmp(pe.szExeFile, L"RTSS.exe") == 0) {
+                found = true;
+                break;
+            }
+        } while (Process32NextW(hSnap, &pe));
+    }
+    CloseHandle(hSnap);
+    return found;
+}
+
+std::wstring RTSSBridge::get_rtss_executable_path() {
+    // 1. Query registry HKLM\SOFTWARE\WOW6432Node\Unwinder\RTSS -> InstallPath
+    HKEY hKey = nullptr;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Unwinder\\RTSS", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        wchar_t path[MAX_PATH] = { 0 };
+        DWORD size = sizeof(path);
+        if (RegQueryValueExW(hKey, L"InstallPath", nullptr, nullptr, reinterpret_cast<LPBYTE>(path), &size) == ERROR_SUCCESS) {
+            RegCloseKey(hKey);
+            if (GetFileAttributesW(path) != INVALID_FILE_ATTRIBUTES) {
+                return path;
+            }
+        }
+        RegCloseKey(hKey);
+    }
+
+    // 2. Standard Program Files candidates
+    const wchar_t* candidates[] = {
+        L"C:\\Program Files (x86)\\RivaTuner Statistics Server\\RTSS.exe",
+        L"C:\\Program Files\\RivaTuner Statistics Server\\RTSS.exe"
+    };
+    for (const auto* cand : candidates) {
+        if (GetFileAttributesW(cand) != INVALID_FILE_ATTRIBUTES) {
+            return cand;
+        }
+    }
+
+    return L"";
+}
+
+bool RTSSBridge::is_rtss_installed() {
+    return !get_rtss_executable_path().empty();
+}
+
+bool RTSSBridge::launch_rtss() {
+    std::wstring path = get_rtss_executable_path();
+    if (path.empty()) return false;
+
+    SHELLEXECUTEINFOW sei{};
+    sei.cbSize = sizeof(sei);
+    sei.lpVerb = L"open";
+    sei.lpFile = path.c_str();
+    sei.nShow = SW_SHOWNORMAL;
+    sei.fMask = SEE_MASK_FLAG_NO_UI;
+
+    return ShellExecuteExW(&sei) == TRUE;
+}
+
+bool RTSSBridge::restart_rtss() {
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32W pe{};
+        pe.dwSize = sizeof(pe);
+        if (Process32FirstW(hSnap, &pe)) {
+            do {
+                if (_wcsicmp(pe.szExeFile, L"RTSS.exe") == 0) {
+                    HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                    if (hProc) {
+                        TerminateProcess(hProc, 0);
+                        CloseHandle(hProc);
+                    }
+                }
+            } while (Process32NextW(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+    }
+
+    Sleep(500);
+    return launch_rtss();
+}
+
 RTSSBridge::RTSSBridge() {
     connect();
 }
@@ -60,8 +168,20 @@ bool RTSSBridge::connect() {
 
     h_map_file_ = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
     if (!h_map_file_) {
-        is_connected_ = false;
-        return false;
+        // If not running but installed, auto-raise RTSS in background
+        if (!is_rtss_process_running() && is_rtss_installed()) {
+            launch_rtss();
+            for (int i = 0; i < 10; ++i) {
+                Sleep(100);
+                h_map_file_ = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, "RTSSSharedMemoryV2");
+                if (h_map_file_) break;
+            }
+        }
+
+        if (!h_map_file_) {
+            is_connected_ = false;
+            return false;
+        }
     }
 
     map_addr_ = MapViewOfFile(h_map_file_, FILE_MAP_ALL_ACCESS, 0, 0, 0);
@@ -116,35 +236,44 @@ bool RTSSBridge::write_to_shared_memory(const char* text) {
         }
     }
 
+    std::string clean_text = strip_rtss_tags(text);
     bool updated = false;
 
     // Two passes:
     // Pass 0: Find our existing slot owned by "AnyPerfomans"
-    // Pass 1: Find first free slot (starting from index 1 to leave slot 0 for MSI Afterburner)
+    // Pass 1: Find first free slot (starts at 0; if slot 0 is held by Afterburner, takes 1)
     for (DWORD pass = 0; pass < 2; ++pass) {
-        for (DWORD entry = 1; entry < pHeader->dwOSDArrSize; ++entry) {
+        for (DWORD entry = 0; entry < pHeader->dwOSDArrSize; ++entry) {
             auto* pEntry = reinterpret_cast<RTSS_OSD_SLOT*>(
                 reinterpret_cast<LPBYTE>(pHeader) + pHeader->dwOSDArrOffset + entry * pHeader->dwOSDEntrySize
             );
 
+            // Never overwrite another application's slot (e.g. "MSIAfterburner")
             if (pass == 1 && pEntry->szOSDOwner[0] == '\0') {
                 strcpy_s(pEntry->szOSDOwner, sizeof(pEntry->szOSDOwner), "AnyPerfomans");
             }
 
             if (strcmp(pEntry->szOSDOwner, "AnyPerfomans") == 0) {
-                if (pHeader->dwVersion >= 0x00020007) {
-                    // Extended text slot (up to 4096 bytes with rich formatting)
-                    if (pHeader->dwVersion >= 0x0002000E) {
-                        DWORD dwBusy = _interlockedbittestandset(&pHeader->dwBusy, 0);
-                        if (!dwBusy) {
-                            strncpy_s(pEntry->szOSDEx, sizeof(pEntry->szOSDEx), text, sizeof(pEntry->szOSDEx) - 1);
-                            pHeader->dwBusy = 0;
+                // Wait briefly if OSD buffer is busy (up to 10ms retry)
+                if (pHeader->dwVersion >= 0x0002000E) {
+                    for (int retry = 0; retry < 10; ++retry) {
+                        if (!_interlockedbittestandset(&pHeader->dwBusy, 0)) {
+                            break;
                         }
-                    } else {
-                        strncpy_s(pEntry->szOSDEx, sizeof(pEntry->szOSDEx), text, sizeof(pEntry->szOSDEx) - 1);
+                        Sleep(1);
                     }
-                } else {
-                    strncpy_s(pEntry->szOSD, sizeof(pEntry->szOSD), text, sizeof(pEntry->szOSD) - 1);
+                }
+
+                // 1. Write extended formatted OSD
+                if (pHeader->dwVersion >= 0x00020007) {
+                    strncpy_s(pEntry->szOSDEx, sizeof(pEntry->szOSDEx), text, sizeof(pEntry->szOSDEx) - 1);
+                }
+
+                // 2. Write universal fallback OSD (unformatted clean text for legacy/strict renderers)
+                strncpy_s(pEntry->szOSD, sizeof(pEntry->szOSD), clean_text.c_str(), sizeof(pEntry->szOSD) - 1);
+
+                if (pHeader->dwVersion >= 0x0002000E) {
+                    pHeader->dwBusy = 0;
                 }
 
                 pHeader->dwOSDFrame++;

@@ -184,6 +184,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             etw_tracker,
             gpu_mon,
             config_mgr,
+            rtss_bridge,
             backend,
             display_frame_stats,
             current_mode

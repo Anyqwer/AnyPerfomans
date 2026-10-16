@@ -2,6 +2,7 @@
 #include "anyperf/etw_tracker.hpp"
 #include "anyperf/dx11_backend.hpp"
 #include "anyperf/report_generator.hpp"
+#include "anyperf/rtss_bridge.hpp"
 #include <imgui.h>
 #include <implot.h>
 #include <sstream>
@@ -58,6 +59,7 @@ void DashboardView::render(
     EtwTracker& etw_tracker,
     GpuMonitor& gpu_mon,
     ConfigManager& config_mgr,
+    RTSSBridge& rtss_bridge,
     Dx11Backend& backend,
     const FrameStats& frame_stats,
     OverlayMode& current_mode
@@ -106,7 +108,7 @@ void DashboardView::render(
             render_benchmark_tab(proc_mon, gpu_mon.get_metrics(), frame_stats, fonts);
             break;
         case 3:
-            render_settings_tab(config_mgr, fonts);
+            render_settings_tab(config_mgr, rtss_bridge, fonts);
             break;
     }
 
@@ -845,11 +847,42 @@ void DashboardView::render_benchmark_tab(
     }
 }
 
-void DashboardView::render_settings_tab(ConfigManager& config_mgr, const AppFonts& fonts) {
+void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& rtss_bridge, const AppFonts& fonts) {
     auto& hud = config_mgr.get_hud();
     auto& hotkeys = config_mgr.get_hotkeys();
 
-    // 0. Output Display Targets (MSI Afterburner / RTSS Architecture)
+    // 0. RTSS Standalone Service Control
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "RIVATUNER STATISTICS SERVER (RTSS) ENGINE");
+    if (rtss_bridge.is_connected()) {
+        ImGui::TextColored(ImVec4(0.0f, 0.9f, 0.45f, 1.0f), "[ONLINE] Connected to RivaTuner Statistics Server V2");
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "[OFFLINE] RTSS is not running or memory mapping is inactive");
+    }
+
+    if (ImGui::Button("Start / Connect RTSS")) {
+        RTSSBridge::launch_rtss();
+        Sleep(600);
+        rtss_bridge.connect();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Restart RTSS Server")) {
+        RTSSBridge::restart_rtss();
+        Sleep(600);
+        rtss_bridge.connect();
+    }
+
+    std::wstring rtss_path = RTSSBridge::get_rtss_executable_path();
+    if (!rtss_path.empty()) {
+        ImGui::TextDisabled("Detected RTSS Path: %s", wide_to_utf8(rtss_path).c_str());
+    } else {
+        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Notice: RTSS.exe was not detected in default directories.");
+    }
+    ImGui::TextDisabled("Note: MSI Afterburner is NOT required. AnyPerfomans raises and feeds RTSS directly.");
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // 1. Output Display Targets (MSI Afterburner / RTSS Architecture)
     ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "TELEMETRY ENGINE OUTPUT TARGETS");
     ImGui::Checkbox("Output to RTSS On-Screen Display (RivaTuner Shared Memory V2)", &hud.output_to_rtss);
     ImGui::TextDisabled("Injects real-time telemetry straight into RivaTuner OSD memory slot 'AnyPerfomans' with custom formatting tags.");

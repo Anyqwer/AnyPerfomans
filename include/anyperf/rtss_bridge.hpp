@@ -20,6 +20,13 @@ public:
     void disconnect();
     bool is_connected() const { return is_connected_; }
 
+    // Standalone RTSS process management
+    static bool is_rtss_installed();
+    static std::wstring get_rtss_executable_path();
+    static bool is_rtss_process_running();
+    static bool launch_rtss();
+    static bool restart_rtss();
+
     // Send formatted telemetry to RTSS On-Screen Display
     bool update_osd(
         const ProcessMonitor& proc_mon,
