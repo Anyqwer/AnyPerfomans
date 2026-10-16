@@ -9,15 +9,9 @@
 #include <cmath>
 #include <algorithm>
 
-namespace anyperf {
+#include "anyperf/utils.hpp"
 
-static std::string wide_to_utf8(const std::wstring& wstr) {
-    if (wstr.empty()) return {};
-    int size = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
-    std::string result(size, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), &result[0], size, nullptr, nullptr);
-    return result;
-}
+namespace anyperf {
 
 static bool stristr_simple(const std::string& haystack, const std::string& needle) {
     if (needle.empty()) return true;

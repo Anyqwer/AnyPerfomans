@@ -55,6 +55,8 @@ private:
     std::unordered_map<DWORD, uint64_t> prev_proc_cycles_;
 
     std::chrono::steady_clock::time_point last_sample_time_;
+    uint32_t logical_core_count_ = 1;
+    double cpu_base_frequency_hz_ = 3.5e9;
 };
 
 } // namespace anyperf

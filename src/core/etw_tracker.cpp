@@ -13,11 +13,6 @@ static const GUID DXGI_PROVIDER_GUID = {
     0xca11c036, 0x102, 0x4a2d, { 0xa6, 0xad, 0xf0, 0x3c, 0xfe, 0xd5, 0xd3, 0xc9 }
 };
 
-// Provider GUID: Microsoft-Windows-DxgKrnl {80E80400-9270-46EE-9829-B9560C607260}
-static const GUID DXGKRNL_PROVIDER_GUID = {
-    0x80e80400, 0x9270, 0x46ee, { 0x98, 0x29, 0xb9, 0x56, 0xc, 0x60, 0x72, 0x60 }
-};
-
 namespace anyperf {
 
 static const wchar_t* K_ETW_SESSION_NAME = L"AnyPerfomansETWSession";
@@ -40,7 +35,7 @@ void EtwTracker::set_target_pid(DWORD pid) {
     target_pid_.store(pid);
     std::lock_guard<std::mutex> lock(stats_mutex_);
     recent_frametimes_.clear();
-    last_present_qpc_ = 0;
+    last_present_qpc_.store(0, std::memory_order_relaxed);
     current_stats_ = FrameStats{};
 }
 
@@ -56,7 +51,7 @@ void WINAPI EtwTracker::EventRecordCallback(PEVENT_RECORD pEventRecord) {
         UCHAR opcode = pEventRecord->EventHeader.EventDescriptor.Opcode;
         USHORT id = pEventRecord->EventHeader.EventDescriptor.Id;
 
-        if (opcode == 1 || id == 42 || opcode == 0) {
+        if (opcode == 1 || id == 42) {
             uint64_t qpc = pEventRecord->EventHeader.TimeStamp.QuadPart;
             g_etw_tracker_instance->on_present(qpc, eventPid);
         }
@@ -66,17 +61,18 @@ void WINAPI EtwTracker::EventRecordCallback(PEVENT_RECORD pEventRecord) {
 void EtwTracker::on_present(uint64_t qpc_timestamp, DWORD /*pid*/) {
     if (qpc_freq_ == 0) return;
 
-    if (last_present_qpc_ == 0) {
-        last_present_qpc_ = qpc_timestamp;
+    uint64_t prev_qpc = last_present_qpc_.load(std::memory_order_relaxed);
+    if (prev_qpc == 0) {
+        last_present_qpc_.store(qpc_timestamp, std::memory_order_relaxed);
         return;
     }
 
-    if (qpc_timestamp <= last_present_qpc_) {
+    if (qpc_timestamp <= prev_qpc) {
         return;
     }
 
-    double delta_ms = static_cast<double>(qpc_timestamp - last_present_qpc_) * 1000.0 / static_cast<double>(qpc_freq_);
-    last_present_qpc_ = qpc_timestamp;
+    double delta_ms = static_cast<double>(qpc_timestamp - prev_qpc) * 1000.0 / static_cast<double>(qpc_freq_);
+    last_present_qpc_.store(qpc_timestamp, std::memory_order_relaxed);
 
     // Filter out aberrant delta timestamps (e.g. paused rendering or system sleep)
     if (delta_ms < 0.1 || delta_ms > 1000.0) {

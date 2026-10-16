@@ -55,7 +55,7 @@ private:
 
     // Performance timer
     uint64_t qpc_freq_ = 1;
-    uint64_t last_present_qpc_ = 0;
+    std::atomic<uint64_t> last_present_qpc_{ 0 };
 
     // Rolling statistics (guarded)
     mutable std::mutex stats_mutex_;

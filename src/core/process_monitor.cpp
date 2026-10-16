@@ -3,6 +3,7 @@
 #include <psapi.h>
 #include <algorithm>
 #include <iostream>
+#include <winreg.h>
 
 namespace anyperf {
 
@@ -31,6 +32,23 @@ ProcessColor ProcessMonitor::assign_palette_color(size_t index) {
 ProcessMonitor::ProcessMonitor() {
     GetSystemTimes(&prev_idle_time_, &prev_kernel_time_, &prev_user_time_);
     last_sample_time_ = std::chrono::steady_clock::now();
+
+    // Detect logical core count for CPU% normalization
+    SYSTEM_INFO sysInfo{};
+    GetSystemInfo(&sysInfo);
+    logical_core_count_ = sysInfo.dwNumberOfProcessors;
+    if (logical_core_count_ == 0) logical_core_count_ = 1;
+
+    // Detect CPU base frequency from registry
+    HKEY hKey = nullptr;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        DWORD mhz = 0;
+        DWORD size = sizeof(mhz);
+        if (RegQueryValueExW(hKey, L"~MHz", nullptr, nullptr, reinterpret_cast<LPBYTE>(&mhz), &size) == ERROR_SUCCESS && mhz > 0) {
+            cpu_base_frequency_hz_ = static_cast<double>(mhz) * 1.0e6;
+        }
+        RegCloseKey(hKey);
+    }
 }
 
 ProcessMonitor::~ProcessMonitor() {
@@ -250,7 +268,7 @@ void ProcessMonitor::sample_process(HANDLE hProcess, ProcessMetrics& metrics, ui
         if (metrics.cpu_percent == 0.0 && metrics.cycle_delta > 5000 && system_delta_time_100ns > 0) {
             double delta_sec = static_cast<double>(system_delta_time_100ns) / 10000000.0;
             if (delta_sec > 0.001) {
-                double est_cpu = (static_cast<double>(metrics.cycle_delta) / (3.5e9 * delta_sec)) * 100.0;
+                double est_cpu = (static_cast<double>(metrics.cycle_delta) / (cpu_base_frequency_hz_ * static_cast<double>(logical_core_count_) * delta_sec)) * 100.0;
                 if (est_cpu > 0.02) {
                     metrics.cpu_percent = (est_cpu > 100.0) ? 100.0 : est_cpu;
                 }

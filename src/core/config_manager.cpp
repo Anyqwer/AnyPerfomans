@@ -1,8 +1,9 @@
 #include "anyperf/config_manager.hpp"
+#include <nlohmann/json.hpp>
 #include <fstream>
-#include <sstream>
 #include <iostream>
-#include <iomanip>
+
+using json = nlohmann::json;
 
 namespace anyperf {
 
@@ -33,38 +34,6 @@ std::string ConfigManager::key_to_string(UINT vk_code) {
     return "Key 0x" + std::to_string(vk_code);
 }
 
-static bool parse_bool(const std::string& line, const std::string& key, bool default_val) {
-    auto pos = line.find("\"" + key + "\"");
-    if (pos == std::string::npos) return default_val;
-    auto colon = line.find(':', pos);
-    if (colon == std::string::npos) return default_val;
-    return line.find("true", colon) != std::string::npos;
-}
-
-static float parse_float(const std::string& line, const std::string& key, float default_val) {
-    auto pos = line.find("\"" + key + "\"");
-    if (pos == std::string::npos) return default_val;
-    auto colon = line.find(':', pos);
-    if (colon == std::string::npos) return default_val;
-    try {
-        return std::stof(line.substr(colon + 1));
-    } catch (...) {
-        return default_val;
-    }
-}
-
-static int parse_int(const std::string& line, const std::string& key, int default_val) {
-    auto pos = line.find("\"" + key + "\"");
-    if (pos == std::string::npos) return default_val;
-    auto colon = line.find(':', pos);
-    if (colon == std::string::npos) return default_val;
-    try {
-        return std::stoi(line.substr(colon + 1));
-    } catch (...) {
-        return default_val;
-    }
-}
-
 bool ConfigManager::load_from_file(const std::wstring& filename) {
     current_file_ = filename;
     std::ifstream file(filename);
@@ -72,36 +41,40 @@ bool ConfigManager::load_from_file(const std::wstring& filename) {
         return false;
     }
 
-    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
-    file.close();
+    try {
+        json j = json::parse(file);
 
-    hud_.position = static_cast<HudPosition>(parse_int(content, "position", static_cast<int>(HudPosition::TopLeft)));
-    hud_.custom_x = parse_int(content, "custom_x", 20);
-    hud_.custom_y = parse_int(content, "custom_y", 20);
-    hud_.bg_opacity = parse_float(content, "bg_opacity", 0.85f);
-    hud_.font_scale = parse_float(content, "font_scale", 1.0f);
+        hud_.position = static_cast<HudPosition>(j.value("position", static_cast<int>(HudPosition::TopLeft)));
+        hud_.custom_x = j.value("custom_x", 20);
+        hud_.custom_y = j.value("custom_y", 20);
+        hud_.bg_opacity = j.value("bg_opacity", 0.85f);
+        hud_.font_scale = j.value("font_scale", 1.0f);
 
-    hud_.show_fps = parse_bool(content, "show_fps", true);
-    hud_.show_1pct_low = parse_bool(content, "show_1pct_low", true);
-    hud_.show_01pct_low = parse_bool(content, "show_01pct_low", true);
-    hud_.show_frametime_text = parse_bool(content, "show_frametime_text", true);
+        hud_.show_fps = j.value("show_fps", true);
+        hud_.show_1pct_low = j.value("show_1pct_low", true);
+        hud_.show_01pct_low = j.value("show_01pct_low", true);
+        hud_.show_frametime_text = j.value("show_frametime_text", true);
 
-    hud_.show_frametime_graph = parse_bool(content, "show_frametime_graph", true);
-    hud_.frametime_graph_height = parse_float(content, "frametime_graph_height", 45.0f);
-    hud_.frametime_graph_max_ms = parse_float(content, "frametime_graph_max_ms", 33.3f);
+        hud_.show_frametime_graph = j.value("show_frametime_graph", true);
+        hud_.frametime_graph_height = j.value("frametime_graph_height", 45.0f);
+        hud_.frametime_graph_max_ms = j.value("frametime_graph_max_ms", 33.3f);
 
-    hud_.show_gpu_usage = parse_bool(content, "show_gpu_usage", true);
-    hud_.show_gpu_temp = parse_bool(content, "show_gpu_temp", true);
-    hud_.show_gpu_vram = parse_bool(content, "show_gpu_vram", true);
-    hud_.show_gpu_clock = parse_bool(content, "show_gpu_clock", true);
-    hud_.show_gpu_power = parse_bool(content, "show_gpu_power", false);
+        hud_.show_gpu_usage = j.value("show_gpu_usage", true);
+        hud_.show_gpu_temp = j.value("show_gpu_temp", true);
+        hud_.show_gpu_vram = j.value("show_gpu_vram", true);
+        hud_.show_gpu_clock = j.value("show_gpu_clock", true);
+        hud_.show_gpu_power = j.value("show_gpu_power", false);
 
-    hud_.show_cpu_usage = parse_bool(content, "show_cpu_usage", true);
-    hud_.show_system_ram = parse_bool(content, "show_system_ram", true);
-    hud_.show_secondary_apps = parse_bool(content, "show_secondary_apps", true);
+        hud_.show_cpu_usage = j.value("show_cpu_usage", true);
+        hud_.show_system_ram = j.value("show_system_ram", true);
+        hud_.show_secondary_apps = j.value("show_secondary_apps", true);
 
-    hotkeys_.toggle_overlay_key = static_cast<UINT>(parse_int(content, "toggle_overlay_key", VK_F11));
-    hotkeys_.toggle_benchmark_key = static_cast<UINT>(parse_int(content, "toggle_benchmark_key", VK_F10));
+        hotkeys_.toggle_overlay_key = static_cast<UINT>(j.value("toggle_overlay_key", static_cast<int>(VK_F11)));
+        hotkeys_.toggle_benchmark_key = static_cast<UINT>(j.value("toggle_benchmark_key", static_cast<int>(VK_F10)));
+    } catch (const json::exception& e) {
+        std::cerr << "[AnyPerfomans] Config parse error: " << e.what() << std::endl;
+        return false;
+    }
 
     return true;
 }
@@ -113,36 +86,37 @@ bool ConfigManager::save_to_file(const std::wstring& filename) {
         return false;
     }
 
-    file << "{\n";
-    file << "  \"position\": " << static_cast<int>(hud_.position) << ",\n";
-    file << "  \"custom_x\": " << hud_.custom_x << ",\n";
-    file << "  \"custom_y\": " << hud_.custom_y << ",\n";
-    file << "  \"bg_opacity\": " << hud_.bg_opacity << ",\n";
-    file << "  \"font_scale\": " << hud_.font_scale << ",\n";
+    json j = {
+        {"position", static_cast<int>(hud_.position)},
+        {"custom_x", hud_.custom_x},
+        {"custom_y", hud_.custom_y},
+        {"bg_opacity", hud_.bg_opacity},
+        {"font_scale", hud_.font_scale},
 
-    file << "  \"show_fps\": " << (hud_.show_fps ? "true" : "false") << ",\n";
-    file << "  \"show_1pct_low\": " << (hud_.show_1pct_low ? "true" : "false") << ",\n";
-    file << "  \"show_01pct_low\": " << (hud_.show_01pct_low ? "true" : "false") << ",\n";
-    file << "  \"show_frametime_text\": " << (hud_.show_frametime_text ? "true" : "false") << ",\n";
+        {"show_fps", hud_.show_fps},
+        {"show_1pct_low", hud_.show_1pct_low},
+        {"show_01pct_low", hud_.show_01pct_low},
+        {"show_frametime_text", hud_.show_frametime_text},
 
-    file << "  \"show_frametime_graph\": " << (hud_.show_frametime_graph ? "true" : "false") << ",\n";
-    file << "  \"frametime_graph_height\": " << hud_.frametime_graph_height << ",\n";
-    file << "  \"frametime_graph_max_ms\": " << hud_.frametime_graph_max_ms << ",\n";
+        {"show_frametime_graph", hud_.show_frametime_graph},
+        {"frametime_graph_height", hud_.frametime_graph_height},
+        {"frametime_graph_max_ms", hud_.frametime_graph_max_ms},
 
-    file << "  \"show_gpu_usage\": " << (hud_.show_gpu_usage ? "true" : "false") << ",\n";
-    file << "  \"show_gpu_temp\": " << (hud_.show_gpu_temp ? "true" : "false") << ",\n";
-    file << "  \"show_gpu_vram\": " << (hud_.show_gpu_vram ? "true" : "false") << ",\n";
-    file << "  \"show_gpu_clock\": " << (hud_.show_gpu_clock ? "true" : "false") << ",\n";
-    file << "  \"show_gpu_power\": " << (hud_.show_gpu_power ? "true" : "false") << ",\n";
+        {"show_gpu_usage", hud_.show_gpu_usage},
+        {"show_gpu_temp", hud_.show_gpu_temp},
+        {"show_gpu_vram", hud_.show_gpu_vram},
+        {"show_gpu_clock", hud_.show_gpu_clock},
+        {"show_gpu_power", hud_.show_gpu_power},
 
-    file << "  \"show_cpu_usage\": " << (hud_.show_cpu_usage ? "true" : "false") << ",\n";
-    file << "  \"show_system_ram\": " << (hud_.show_system_ram ? "true" : "false") << ",\n";
-    file << "  \"show_secondary_apps\": " << (hud_.show_secondary_apps ? "true" : "false") << ",\n";
+        {"show_cpu_usage", hud_.show_cpu_usage},
+        {"show_system_ram", hud_.show_system_ram},
+        {"show_secondary_apps", hud_.show_secondary_apps},
 
-    file << "  \"toggle_overlay_key\": " << hotkeys_.toggle_overlay_key << ",\n";
-    file << "  \"toggle_benchmark_key\": " << hotkeys_.toggle_benchmark_key << "\n";
-    file << "}\n";
+        {"toggle_overlay_key", static_cast<int>(hotkeys_.toggle_overlay_key)},
+        {"toggle_benchmark_key", static_cast<int>(hotkeys_.toggle_benchmark_key)}
+    };
 
+    file << j.dump(2) << std::endl;
     file.close();
     return true;
 }

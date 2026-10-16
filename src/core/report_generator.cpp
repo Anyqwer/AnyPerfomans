@@ -5,15 +5,9 @@
 #include <ctime>
 #include <shellapi.h>
 
-namespace anyperf {
+#include "anyperf/utils.hpp"
 
-static std::string wide_to_utf8(const std::wstring& wstr) {
-    if (wstr.empty()) return {};
-    int size = WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), nullptr, 0, nullptr, nullptr);
-    std::string result(size, 0);
-    WideCharToMultiByte(CP_UTF8, 0, wstr.data(), (int)wstr.size(), &result[0], size, nullptr, nullptr);
-    return result;
-}
+namespace anyperf {
 
 std::wstring ReportGenerator::generate_html_report(
     const BenchmarkRecord& record,
@@ -174,7 +168,7 @@ std::wstring ReportGenerator::generate_html_report(
                 <div class="logo">⚡ ANYPERFOMANS</div>
                 <div class="meta-text">Target: <strong>)html";
 
-    html << wide_to_utf8(record.session_name)
+    html << escape_html(wide_to_utf8(record.session_name))
          << "</strong> | Duration: " << record.duration_seconds << "s | Generated via Kernel ETW Engine</div>\n"
          << R"html(            </div>
             <div class="actions">
@@ -206,7 +200,7 @@ std::wstring ReportGenerator::generate_html_report(
          << gpu.core_usage_percent
          << R"html(%</div>
                 <div class="card-sub">)html"
-         << wide_to_utf8(gpu.adapter_name) << (gpu.temperature_c > 0 ? (" | " + std::to_string(gpu.temperature_c) + " C") : "")
+         << escape_html(wide_to_utf8(gpu.adapter_name)) << (gpu.temperature_c > 0 ? (" | " + std::to_string(gpu.temperature_c) + " C") : "")
          << R"html(</div>
             </div>
             <div class="card">
@@ -244,7 +238,7 @@ std::wstring ReportGenerator::generate_html_report(
         const auto& p = record.process_summaries[i];
         bool is_primary = (i == 0);
         html << "<tr>\n"
-             << "<td><strong>" << wide_to_utf8(p.name) << "</strong></td>\n"
+             << "<td><strong>" << escape_html(wide_to_utf8(p.name)) << "</strong></td>\n"
              << "<td>" << p.pid << "</td>\n"
              << "<td>" << std::fixed << std::setprecision(2) << p.avg_cpu_percent << "%</td>\n"
              << "<td>" << p.avg_ram_mb << " MB</td>\n"

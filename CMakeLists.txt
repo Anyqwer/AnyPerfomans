@@ -56,11 +56,25 @@ if(NOT implot_POPULATED)
     target_link_libraries(implot PUBLIC imgui)
 endif()
 
-# 3. Main Project
-file(GLOB_RECURSE CORE_SOURCES
-    "src/core/*.cpp"
-    "src/render/*.cpp"
-    "src/ui/*.cpp"
+# 3. nlohmann/json (header-only)
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
+# 4. Main Project
+set(CORE_SOURCES
+    src/core/config_manager.cpp
+    src/core/etw_tracker.cpp
+    src/core/gpu_monitor.cpp
+    src/core/process_monitor.cpp
+    src/core/report_generator.cpp
+    src/core/thread_profiler.cpp
+    src/render/dx11_backend.cpp
+    src/ui/dashboard_view.cpp
 )
 
 add_executable(AnyPerfomans WIN32
@@ -78,6 +92,7 @@ target_include_directories(AnyPerfomans PRIVATE
 target_link_libraries(AnyPerfomans PRIVATE
     imgui
     implot
+    nlohmann_json::nlohmann_json
     d3d11
     dxgi
     d3dcompiler

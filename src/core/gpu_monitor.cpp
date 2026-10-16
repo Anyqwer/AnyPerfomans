@@ -67,6 +67,10 @@ GpuMonitor::~GpuMonitor() {
         FreeLibrary(h_adl_);
         h_adl_ = nullptr;
     }
+    if (cached_dxgi_factory_) {
+        cached_dxgi_factory_->Release();
+        cached_dxgi_factory_ = nullptr;
+    }
 }
 
 bool GpuMonitor::init_nvml() {
@@ -256,11 +260,13 @@ void GpuMonitor::update_adl() {
 }
 
 void GpuMonitor::update_dxgi() {
-    IDXGIFactory1* pFactory = nullptr;
-    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&pFactory)))) return;
+    // Create factory once and cache it
+    if (!cached_dxgi_factory_) {
+        if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&cached_dxgi_factory_)))) return;
+    }
 
     IDXGIAdapter1* pAdapter = nullptr;
-    if (SUCCEEDED(pFactory->EnumAdapters1(0, &pAdapter))) {
+    if (SUCCEEDED(cached_dxgi_factory_->EnumAdapters1(0, &pAdapter))) {
         DXGI_ADAPTER_DESC1 desc{};
         if (SUCCEEDED(pAdapter->GetDesc1(&desc))) {
             metrics_.adapter_name = desc.Description;
@@ -272,7 +278,6 @@ void GpuMonitor::update_dxgi() {
         }
         pAdapter->Release();
     }
-    pFactory->Release();
 }
 
 void GpuMonitor::update() {

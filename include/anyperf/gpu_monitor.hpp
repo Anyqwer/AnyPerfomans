@@ -5,6 +5,8 @@
 #include <string>
 #include <cstdint>
 
+struct IDXGIFactory1; // Forward declaration
+
 namespace anyperf {
 
 struct GpuMetrics {
@@ -90,6 +92,9 @@ private:
     HMODULE h_adl_ = nullptr;
     void* adl_context_ = nullptr;
     int adl_adapter_index_ = -1;
+
+    // Cached DXGI factory to avoid expensive re-creation every update
+    IDXGIFactory1* cached_dxgi_factory_ = nullptr;
 };
 
 } // namespace anyperf
