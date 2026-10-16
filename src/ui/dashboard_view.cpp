@@ -851,7 +851,7 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
     auto& hud = config_mgr.get_hud();
     auto& hotkeys = config_mgr.get_hotkeys();
 
-    // 0. RTSS Standalone Service Control
+    // 0. RTSS Standalone Service Control & Lifecycle
     ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "RIVATUNER STATISTICS SERVER (RTSS) ENGINE");
     if (rtss_bridge.is_connected()) {
         ImGui::TextColored(ImVec4(0.0f, 0.9f, 0.45f, 1.0f), "[ONLINE] Connected to RivaTuner Statistics Server V2");
@@ -870,6 +870,18 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
         Sleep(600);
         rtss_bridge.connect();
     }
+    ImGui::SameLine();
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.15f, 0.8f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.15f, 0.2f, 1.0f));
+    if (ImGui::Button("Shutdown RTSS")) {
+        rtss_bridge.clear_osd();
+        rtss_bridge.disconnect();
+        RTSSBridge::kill_rtss();
+    }
+    ImGui::PopStyleColor(2);
+
+    ImGui::Checkbox("Close RTSS process automatically when AnyPerfomans exits", &hud.close_rtss_on_exit);
+    ImGui::TextDisabled("Ensures no orphaned RTSS.exe background tasks remain when you close AnyPerfomans.");
 
     std::wstring rtss_path = RTSSBridge::get_rtss_executable_path();
     if (!rtss_path.empty()) {
@@ -877,26 +889,155 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
     } else {
         ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "Notice: RTSS.exe was not detected in default directories.");
     }
-    ImGui::TextDisabled("Note: MSI Afterburner is NOT required. AnyPerfomans raises and feeds RTSS directly.");
+    ImGui::TextDisabled("Note: MSI Afterburner is NOT required. AnyPerfomans feeds RTSS directly with zero overhead.");
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    // 1. Output Display Targets (MSI Afterburner / RTSS Architecture)
+    // 1. Output Display Targets (Smart F11 Coordination)
     ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "TELEMETRY ENGINE OUTPUT TARGETS");
     ImGui::Checkbox("Output to RTSS On-Screen Display (RivaTuner Shared Memory V2)", &hud.output_to_rtss);
-    ImGui::TextDisabled("Injects real-time telemetry straight into RivaTuner OSD memory slot 'AnyPerfomans' with custom formatting tags.");
-    ImGui::Checkbox("DirectX 11 Standalone Transparent Overlay (Zero-Hook Fallback)", &hud.output_to_dx11_overlay);
+    ImGui::TextDisabled("Injects real-time hardware telemetry and hardware line graphs into RivaTuner OSD.");
+    ImGui::Checkbox("DirectX 11 Standalone Transparent Overlay (Zero-Hook Desktop Fallback)", &hud.output_to_dx11_overlay);
     ImGui::TextDisabled("Hardware-accelerated layered window overlay running independently over games.");
+    if (hud.output_to_rtss) {
+        ImGui::TextColored(ImVec4(0.4f, 0.85f, 1.0f, 1.0f), "* Smart F11: RTSS is active. Pressing F11 minimizes AnyPerfomans without popping up duplicate DX11 overlays.");
+    }
     ImGui::Spacing();
     ImGui::Separator();
     ImGui::Spacing();
 
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "MINI-OVERLAY & HUD CUSTOMIZATION");
-    ImGui::TextDisabled("Configure on-screen position, font scale, background opacity, and frametime graph.");
+    // 2. MSI Afterburner MAX: Line Graphs & Sensor Customization
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "RTSS HARDWARE LINE GRAPHS & LABELS (MSI AFTERBURNER MAX)");
+    ImGui::TextDisabled("Configure line graph modes and custom sensor names for RTSS In-Game OSD.");
     ImGui::Spacing();
 
-    // 1. Position Grid Selector
+    // Graph style controls
+    ImGui::Checkbox("Fill Graph Background (Unchecked = Clean Sharp Line Graph)", &hud.rtss_graph_filled);
+    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    ImGui::SliderFloat("Frametime Max (ms)", &hud.rtss_frametime_max_ms, 16.6f, 100.0f, "%.1f ms");
+
+    int graph_h = hud.rtss_graph_height;
+    const char* height_options[] = { "2 Lines (-2)", "3 Lines (-3)", "4 Lines (-4, Default)", "5 Lines (-5)" };
+    int current_h_idx = (graph_h == -2) ? 0 : (graph_h == -3) ? 1 : (graph_h == -5) ? 3 : 2;
+    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    if (ImGui::Combo("Graph Height", &current_h_idx, height_options, IM_ARRAYSIZE(height_options))) {
+        int vals[] = { -2, -3, -4, -5 };
+        hud.rtss_graph_height = vals[current_h_idx];
+    }
+    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    const char* width_options[] = { "24 Chars (-24)", "32 Chars (-32, Default)", "40 Chars (-40)", "48 Chars (-48)" };
+    int graph_w = hud.rtss_graph_width;
+    int current_w_idx = (graph_w == -24) ? 0 : (graph_w == -40) ? 2 : (graph_w == -48) ? 3 : 1;
+    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    if (ImGui::Combo("Graph Width", &current_w_idx, width_options, IM_ARRAYSIZE(width_options))) {
+        int vals[] = { -24, -32, -40, -48 };
+        hud.rtss_graph_width = vals[current_w_idx];
+    }
+
+    ImGui::Spacing();
+
+    // Sensor Customization Table
+    const char* mode_names[] = { "Disabled", "Text Only", "Graph Only (Line)", "Text + Graph (Line)" };
+    char name_buf[64];
+
+    // Sensor 1: Frametime
+    int cur_mode_ft = static_cast<int>(hud.mode_frametime);
+    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
+    if (ImGui::Combo("Frametime Display##FTMode", &cur_mode_ft, mode_names, IM_ARRAYSIZE(mode_names))) {
+        hud.mode_frametime = static_cast<SensorDisplayMode>(cur_mode_ft);
+    }
+    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    strcpy_s(name_buf, hud.label_frametime.c_str());
+    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    if (ImGui::InputText("Frametime Label##FTLbl", name_buf, sizeof(name_buf))) {
+        hud.label_frametime = name_buf;
+    }
+
+    // Sensor 2: FPS / Framerate
+    int cur_mode_fps = static_cast<int>(hud.mode_fps);
+    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
+    if (ImGui::Combo("FPS Display##FPSMode", &cur_mode_fps, mode_names, IM_ARRAYSIZE(mode_names))) {
+        hud.mode_fps = static_cast<SensorDisplayMode>(cur_mode_fps);
+    }
+    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    strcpy_s(name_buf, hud.label_fps.c_str());
+    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    if (ImGui::InputText("FPS Label##FPSLbl", name_buf, sizeof(name_buf))) {
+        hud.label_fps = name_buf;
+    }
+
+    // Sensor 3: GPU Core Load
+    int cur_mode_gpu = static_cast<int>(hud.mode_gpu);
+    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
+    if (ImGui::Combo("GPU Load Display##GPUMode", &cur_mode_gpu, mode_names, IM_ARRAYSIZE(mode_names))) {
+        hud.mode_gpu = static_cast<SensorDisplayMode>(cur_mode_gpu);
+    }
+    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    strcpy_s(name_buf, hud.label_gpu.c_str());
+    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    if (ImGui::InputText("GPU Label##GPULbl", name_buf, sizeof(name_buf))) {
+        hud.label_gpu = name_buf;
+    }
+
+    // Sensor 4: CPU Total Load
+    int cur_mode_cpu = static_cast<int>(hud.mode_cpu);
+    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
+    if (ImGui::Combo("CPU Load Display##CPUMode", &cur_mode_cpu, mode_names, IM_ARRAYSIZE(mode_names))) {
+        hud.mode_cpu = static_cast<SensorDisplayMode>(cur_mode_cpu);
+    }
+    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    strcpy_s(name_buf, hud.label_cpu.c_str());
+    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    if (ImGui::InputText("CPU Label##CPULbl", name_buf, sizeof(name_buf))) {
+        hud.label_cpu = name_buf;
+    }
+
+    // Sensor 5: System RAM
+    int cur_mode_ram = static_cast<int>(hud.mode_ram);
+    ImGui::SetNextItemWidth(200.0f * fonts.dpi_scale);
+    if (ImGui::Combo("System RAM Display##RAMMode", &cur_mode_ram, mode_names, IM_ARRAYSIZE(mode_names))) {
+        hud.mode_ram = static_cast<SensorDisplayMode>(cur_mode_ram);
+    }
+    ImGui::SameLine(360.0f * fonts.dpi_scale);
+    strcpy_s(name_buf, hud.label_ram.c_str());
+    ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+    if (ImGui::InputText("RAM Label##RAMLbl", name_buf, sizeof(name_buf))) {
+        hud.label_ram = name_buf;
+    }
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // 3. Metric Row Toggles & Percentiles
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "DETAILED TELEMETRY SENSORS");
+    ImGui::Columns(2, "SensorColumns", false);
+
+    ImGui::Checkbox("Show 1% Low FPS", &hud.show_1pct_low);
+    ImGui::Checkbox("Show 0.1% Low FPS", &hud.show_01pct_low);
+    ImGui::Checkbox("Show 0.01% Low FPS", &hud.show_001pct_low);
+    ImGui::Checkbox("Show Min / Max FPS", &hud.show_min_max);
+    ImGui::Checkbox("Show Stutters / Jitter Hitches", &hud.show_stutters);
+    ImGui::Checkbox("Show Frametime (ms) Value", &hud.show_frametime_text);
+
+    ImGui::NextColumn();
+
+    ImGui::Checkbox("Show GPU Core Load %", &hud.show_gpu_usage);
+    ImGui::Checkbox("Show GPU Temperature C", &hud.show_gpu_temp);
+    ImGui::Checkbox("Show GPU VRAM Usage", &hud.show_gpu_vram);
+    ImGui::Checkbox("Show GPU Core Clock (MHz)", &hud.show_gpu_clock);
+    ImGui::Checkbox("Show Pagefile / Commit", &hud.show_pagefile);
+    ImGui::Checkbox("Show Monitored Secondary Apps Tax", &hud.show_secondary_apps);
+
+    ImGui::Columns(1);
+
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // 4. Standalone DX11 Overlay Appearance
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "STANDALONE DX11 OVERLAY SETTINGS");
     ImGui::Text("Overlay Screen Position:");
     const char* pos_names[] = { "Top-Left", "Top-Right", "Bottom-Left", "Bottom-Right", "Custom (Free Coordinates)" };
     int current_pos = static_cast<int>(hud.position);
@@ -914,56 +1055,15 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
 
     ImGui::SliderFloat("HUD Glass Background Opacity", &hud.bg_opacity, 0.1f, 1.0f, "%.2f");
     ImGui::SliderFloat("HUD Font Scale", &hud.font_scale, 0.75f, 1.50f, "%.2fx");
+    ImGui::Checkbox("Show Frametime Graph in DX11 HUD", &hud.show_frametime_graph);
 
     ImGui::Separator();
     ImGui::Spacing();
 
-    // 2. Frametime Graph Customization
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "FRAMETIME GRAPH SETTINGS");
-    ImGui::Checkbox("Show Frametime Graph in HUD", &hud.show_frametime_graph);
-    if (hud.show_frametime_graph) {
-        ImGui::Indent(20.0f);
-        ImGui::SliderFloat("Graph Height (px)", &hud.frametime_graph_height, 20.0f, 90.0f, "%.0f px");
-        ImGui::SliderFloat("Graph Scale Target (ms)", &hud.frametime_graph_max_ms, 16.6f, 60.0f, "%.1f ms");
-        ImGui::TextDisabled("Target baselines: 16.6 ms (60 FPS), 6.9 ms (144 FPS).");
-        ImGui::Unindent(20.0f);
-    }
-
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    // 3. Sensor Toggles
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "DISPLAYED TELEMETRY ROWS");
-    ImGui::Columns(2, "SensorColumns", false);
-
-    ImGui::Checkbox("Show FPS", &hud.show_fps);
-    ImGui::Checkbox("Show 1% Low FPS", &hud.show_1pct_low);
-    ImGui::Checkbox("Show 0.1% Low FPS", &hud.show_01pct_low);
-    ImGui::Checkbox("Show 0.01% Low FPS", &hud.show_001pct_low);
-    ImGui::Checkbox("Show Min / Max FPS", &hud.show_min_max);
-    ImGui::Checkbox("Show Stutters / Jitter", &hud.show_stutters);
-    ImGui::Checkbox("Show Frametime (ms)", &hud.show_frametime_text);
-
-    ImGui::NextColumn();
-
-    ImGui::Checkbox("Show GPU Core Load %", &hud.show_gpu_usage);
-    ImGui::Checkbox("Show GPU Temperature C", &hud.show_gpu_temp);
-    ImGui::Checkbox("Show GPU VRAM Usage", &hud.show_gpu_vram);
-    ImGui::Checkbox("Show GPU Core Clock (MHz)", &hud.show_gpu_clock);
-    ImGui::Checkbox("Show CPU Total Load %", &hud.show_cpu_usage);
-    ImGui::Checkbox("Show System RAM", &hud.show_system_ram);
-    ImGui::Checkbox("Show Pagefile / Commit", &hud.show_pagefile);
-    ImGui::Checkbox("Show Monitored Secondary Apps", &hud.show_secondary_apps);
-
-    ImGui::Columns(1);
-
-    ImGui::Separator();
-    ImGui::Spacing();
-
-    // 4. Hotkeys Configuration
+    // 5. Hotkeys Configuration
     ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "HOTKEYS & SHORTCUTS");
-    ImGui::Text("Toggle HUD: %s (Press to toggle overlay)", ConfigManager::key_to_string(hotkeys.toggle_overlay_key).c_str());
-    ImGui::Text("Toggle Benchmark: %s (Press to start/stop benchmark run)", ConfigManager::key_to_string(hotkeys.toggle_benchmark_key).c_str());
+    ImGui::Text("Toggle AnyPerfomans Dashboard: %s", ConfigManager::key_to_string(hotkeys.toggle_overlay_key).c_str());
+    ImGui::Text("Toggle Benchmark Run: %s", ConfigManager::key_to_string(hotkeys.toggle_benchmark_key).c_str());
 
     ImGui::Spacing();
     ImGui::PushFont(fonts.bold);

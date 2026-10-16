@@ -14,6 +14,13 @@ enum class HudPosition {
     Custom = 4
 };
 
+enum class SensorDisplayMode {
+    Disabled = 0,
+    TextOnly = 1,
+    GraphOnly = 2,
+    TextAndGraph = 3
+};
+
 struct HudConfig {
     HudPosition position = HudPosition::TopLeft;
     int custom_x = 20;
@@ -23,9 +30,30 @@ struct HudConfig {
 
     // Output Target Toggles
     bool output_to_rtss = true;
-    bool output_to_dx11_overlay = true;
+    bool output_to_dx11_overlay = false; // When RTSS is active, default standalone overlay to false to avoid duplicate HUD!
+    bool close_rtss_on_exit = true;      // Auto terminate RTSS.exe on program exit
 
-    // Metric Toggles
+    // Sensor Display Modes (MSI Afterburner style)
+    SensorDisplayMode mode_fps = SensorDisplayMode::TextOnly;
+    SensorDisplayMode mode_frametime = SensorDisplayMode::TextAndGraph; // Default Frametime with high-tech Line Graph!
+    SensorDisplayMode mode_gpu = SensorDisplayMode::TextOnly;
+    SensorDisplayMode mode_cpu = SensorDisplayMode::TextOnly;
+    SensorDisplayMode mode_ram = SensorDisplayMode::TextOnly;
+
+    // Custom Labels / Names
+    std::string label_gpu = "GPU";
+    std::string label_cpu = "CPU";
+    std::string label_ram = "RAM";
+    std::string label_fps = "FPS";
+    std::string label_frametime = "FT";
+
+    // RTSS Embedded Line Graph Settings
+    bool rtss_graph_filled = false;         // false = clean sharp line graph (User requested!), true = filled
+    int rtss_graph_width = -32;             // Width in characters (-32 chars wide)
+    int rtss_graph_height = -4;             // Height in lines (-4 character lines tall)
+    float rtss_frametime_max_ms = 50.0f;    // Max frametime on graph scale (50.0 ms)
+
+    // Metric Details Toggles
     bool show_fps = true;
     bool show_1pct_low = true;
     bool show_01pct_low = true;

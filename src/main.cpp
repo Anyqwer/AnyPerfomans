@@ -13,6 +13,12 @@
 #include <algorithm>
 #include <cmath>
 
+// Official Unwinder export symbol to instruct RTSS to completely bypass
+// and never hook or inject into AnyPerfomans
+extern "C" {
+    __declspec(dllexport) DWORD RTSSHooksCompatibility = 0x00000000;
+}
+
 int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     anyperf::ConfigManager config_mgr;
     anyperf::Dx11Backend backend;
@@ -49,9 +55,17 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         UINT toggle_key = config_mgr.get_hotkeys().toggle_overlay_key;
         if (toggle_key != 0 && (GetAsyncKeyState(toggle_key) & 1)) {
             auto current_mode = backend.get_overlay_mode();
-            auto new_mode = (current_mode == anyperf::OverlayMode::Dashboard)
-                ? (config_mgr.get_hud().output_to_dx11_overlay ? anyperf::OverlayMode::MiniHud : anyperf::OverlayMode::Hidden)
-                : anyperf::OverlayMode::Dashboard;
+            anyperf::OverlayMode new_mode;
+            if (current_mode == anyperf::OverlayMode::Dashboard) {
+                // If output to RTSS is active, pressing F11 hides AnyPerfomans without opening duplicate DX11 overlay
+                if (config_mgr.get_hud().output_to_dx11_overlay && !config_mgr.get_hud().output_to_rtss) {
+                    new_mode = anyperf::OverlayMode::MiniHud;
+                } else {
+                    new_mode = anyperf::OverlayMode::Hidden;
+                }
+            } else {
+                new_mode = anyperf::OverlayMode::Dashboard;
+            }
             backend.set_overlay_mode(new_mode);
         }
 
@@ -199,6 +213,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
 
     rtss_bridge.clear_osd();
     rtss_bridge.disconnect();
+    if (config_mgr.get_hud().close_rtss_on_exit || rtss_bridge.was_launched_by_us()) {
+        anyperf::RTSSBridge::kill_rtss();
+    }
     etw_tracker.stop();
     backend.shutdown();
     return 0;

@@ -51,7 +51,25 @@ bool ConfigManager::load_from_file(const std::wstring& filename) {
         hud_.font_scale = j.value("font_scale", 1.0f);
 
         hud_.output_to_rtss = j.value("output_to_rtss", true);
-        hud_.output_to_dx11_overlay = j.value("output_to_dx11_overlay", true);
+        hud_.output_to_dx11_overlay = j.value("output_to_dx11_overlay", false);
+        hud_.close_rtss_on_exit = j.value("close_rtss_on_exit", true);
+
+        hud_.mode_fps = static_cast<SensorDisplayMode>(j.value("mode_fps", static_cast<int>(SensorDisplayMode::TextOnly)));
+        hud_.mode_frametime = static_cast<SensorDisplayMode>(j.value("mode_frametime", static_cast<int>(SensorDisplayMode::TextAndGraph)));
+        hud_.mode_gpu = static_cast<SensorDisplayMode>(j.value("mode_gpu", static_cast<int>(SensorDisplayMode::TextOnly)));
+        hud_.mode_cpu = static_cast<SensorDisplayMode>(j.value("mode_cpu", static_cast<int>(SensorDisplayMode::TextOnly)));
+        hud_.mode_ram = static_cast<SensorDisplayMode>(j.value("mode_ram", static_cast<int>(SensorDisplayMode::TextOnly)));
+
+        hud_.label_gpu = j.value("label_gpu", "GPU");
+        hud_.label_cpu = j.value("label_cpu", "CPU");
+        hud_.label_ram = j.value("label_ram", "RAM");
+        hud_.label_fps = j.value("label_fps", "FPS");
+        hud_.label_frametime = j.value("label_frametime", "FT");
+
+        hud_.rtss_graph_filled = j.value("rtss_graph_filled", false);
+        hud_.rtss_graph_width = j.value("rtss_graph_width", -32);
+        hud_.rtss_graph_height = j.value("rtss_graph_height", -4);
+        hud_.rtss_frametime_max_ms = j.value("rtss_frametime_max_ms", 50.0f);
 
         hud_.show_fps = j.value("show_fps", true);
         hud_.show_1pct_low = j.value("show_1pct_low", true);
@@ -102,6 +120,24 @@ bool ConfigManager::save_to_file(const std::wstring& filename) {
 
         {"output_to_rtss", hud_.output_to_rtss},
         {"output_to_dx11_overlay", hud_.output_to_dx11_overlay},
+        {"close_rtss_on_exit", hud_.close_rtss_on_exit},
+
+        {"mode_fps", static_cast<int>(hud_.mode_fps)},
+        {"mode_frametime", static_cast<int>(hud_.mode_frametime)},
+        {"mode_gpu", static_cast<int>(hud_.mode_gpu)},
+        {"mode_cpu", static_cast<int>(hud_.mode_cpu)},
+        {"mode_ram", static_cast<int>(hud_.mode_ram)},
+
+        {"label_gpu", hud_.label_gpu},
+        {"label_cpu", hud_.label_cpu},
+        {"label_ram", hud_.label_ram},
+        {"label_fps", hud_.label_fps},
+        {"label_frametime", hud_.label_frametime},
+
+        {"rtss_graph_filled", hud_.rtss_graph_filled},
+        {"rtss_graph_width", hud_.rtss_graph_width},
+        {"rtss_graph_height", hud_.rtss_graph_height},
+        {"rtss_frametime_max_ms", hud_.rtss_frametime_max_ms},
 
         {"show_fps", hud_.show_fps},
         {"show_1pct_low", hud_.show_1pct_low},
