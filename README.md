@@ -33,13 +33,15 @@ It combines the full telemetry and tuning power of **MSI Afterburner** (native *
 - **DirectX 1.4 Instant VRAM**: Zero-overhead video memory tracking via `IDXGIAdapter3::QueryVideoMemoryInfo` in < 0.001 ms, replacing heavy legacy PDH counters.
 - **CPU Hardware Telemetry**: CPU Package Temperature (°C), Package Power Draw (Watts), Logical Core Count, Per-Core Load Breakdown, and Max Loaded Core Indicator with automatic thermal fallback.
 
-### 3. GPU Tuning, Vendor-Safe Overclocking & Undervolting
-- **Architecture Auto-Detection**: Automatically identifies `[AMD RADEON RDNA]` vs `[NVIDIA GEFORCE]` architectures and configures safe hardware limits.
-- **Safe GDDR6 Limits for AMD**: Protects AMD Radeon GPUs by clamping memory clock offsets to safe limits (`-500 .. +250 MHz`), preventing driver crashes from generic/unrealistic +2000 MHz sliders.
-- **True Undervolting**: Voltage offset slider supports negative adjustments down to **-150 mV** with real-time `[UNDERVOLT - Cooler & Quiet]` status indicators.
-- **Interactive V/F Curve Editor**: Live Voltage-Frequency curve visualizer in ImPlot showing frequency boost against operating voltage.
-- **5 Overclock / Tuning Profiles**: Save and switch between up to 5 hardware tuning presets with 1-click application.
-- **Apply at Windows Startup**: Option to automatically re-apply saved clock offsets and power limits on boot.
+### 3. GPU Tuning, True Hardware Overclocking & Undervolting
+- **AMD Overdrive 8 (OD8) Direct Engine**: Native driver-level hardware control for RDNA 1 & RDNA 2 (RX 5000 / RX 6000 series, including RX 5600 XT):
+  - **Real 3-Point V/F Curve Undervolting**: Directly adjusts the top operating state voltage (e.g. 1008 mV down to 950 mV) via `ADL2_Overdrive8_Setting_Set`, reducing temperatures and power draw while preserving stability.
+  - **Dynamic Peak Frequency & Safe Clamping**: Adjusts core boost clock and clamps memory clock within safe VBIOS limits (`1750 .. 1860 MHz` for RX 5600 XT GDDR6).
+  - **Power Limit Range**: Fine control from -50% up to +20% board power headroom.
+- **NVIDIA NVAPI P-States 2.0**: Direct physical clock offsets (`freqDelta_kHz`) for Graphics Core and Memory domains via `NvAPI_GPU_SetPstates20` and native power limit control.
+- **Dedicated Hardware Telemetry & Control Worker**: Telemetry sampling, RTSS OSD updates, and fan curve regulation run on an independent 100ms background thread, completely immune to Win32 modal loops, window dragging, or GUI stalls.
+- **VBIOS Emergency Safety Fallback**: Automatic CRT exit handler (`std::atexit`) instantly restores factory VBIOS fan control in case of application termination or crash.
+- **5 Hardware Tuning Profiles & Autostart**: Save, switch, and apply overclock/undervolt settings and fan curves with optional Windows boot autostart.
 
 ### 4. Acoustic GPU Fan Curve Controller
 - **Three Operation Modes**:
