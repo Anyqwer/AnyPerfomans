@@ -161,6 +161,23 @@ bool RTSSBridge::is_rtss_process_running() {
 }
 
 std::wstring RTSSBridge::get_rtss_executable_path() {
+    // 0. Check bundled / portable RTSS in the application's directory: .\RTSS\RTSS.exe or .\RTSS.exe
+    wchar_t exe_path[MAX_PATH] = { 0 };
+    if (GetModuleFileNameW(nullptr, exe_path, MAX_PATH) > 0) {
+        wchar_t* last_slash = wcsrchr(exe_path, L'\\');
+        if (last_slash) {
+            *last_slash = L'\0';
+            std::wstring local_rtss_sub = std::wstring(exe_path) + L"\\RTSS\\RTSS.exe";
+            if (GetFileAttributesW(local_rtss_sub.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                return local_rtss_sub;
+            }
+            std::wstring local_rtss = std::wstring(exe_path) + L"\\RTSS.exe";
+            if (GetFileAttributesW(local_rtss.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                return local_rtss;
+            }
+        }
+    }
+
     // 1. Query registry HKLM\SOFTWARE\WOW6432Node\Unwinder\RTSS -> InstallPath
     HKEY hKey = nullptr;
     if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\WOW6432Node\\Unwinder\\RTSS", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {

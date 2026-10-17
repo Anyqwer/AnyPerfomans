@@ -41,5 +41,7 @@ out/
 *.user
 _deps/
 CMakeSettings.json
-compile_commands.json
+# Distribution and release artifacts
+dist/
+*.tmp
 
