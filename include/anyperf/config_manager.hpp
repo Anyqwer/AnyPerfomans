@@ -115,8 +115,18 @@ struct HudConfig {
     bool tray_temp_is_gpu = true;
     bool autostart_with_windows = false;
     bool start_minimized_to_tray = false;
-    bool group_gpu_on_one_line = false; // Compact multi-metric OSD line: GPU: 65C | 1750MHz | 99% | 115W
-    bool rtss_osd_visible = true;       // Live toggle for RTSS OSD visibility
+    // Compact Multi-Metric Groupings (MSI Afterburner MAX)
+    bool group_gpu_on_one_line = false;      // Compact GPU line: GPU: 65C | 1750MHz | 99% | 115W
+    bool group_vram_on_one_line = false;     // Compact VRAM line: VRAM: 4850 / 6144 MB | 72C | 1750MHz
+    bool group_cpu_on_one_line = false;      // Compact CPU line: CPU: 62C | 48.5% | 65W
+    bool group_ram_on_one_line = false;      // Compact RAM line: RAM: 14.2 / 31.9 GB | Page: 16.5 GB
+    bool group_fps_on_one_line = false;      // Compact FPS line: FPS: 144 | 6.9ms (Avg 142, 1% Low 115)
+
+    // CPU Per-Core Display Customization (MSI Afterburner style)
+    bool cpu_cores_in_column = false;        // true = Each core in its own row/column (в столбик), false = Grouped
+    bool group_cpu_cores_on_one_line = true; // true = All cores in 1 line, false = wrap by row
+    int cpu_cores_per_row = 8;               // Number of cores per line when wrapped
+    bool rtss_osd_visible = true;            // Live toggle for RTSS OSD visibility
 };
 
 // Fan Curve Point

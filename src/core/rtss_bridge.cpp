@@ -628,8 +628,15 @@ bool RTSSBridge::update_osd(
     }
 
     // 2. Telemetry Rows based on customizable sensor order
+    // 2. Telemetry Rows based on customizable sensor order
     bool gpu_group_rendered = false;
-    if (hud.group_gpu_on_one_line) {
+    bool vram_group_rendered = false;
+    bool cpu_group_rendered = false;
+    bool ram_group_rendered = false;
+    bool fps_group_rendered = false;
+
+    auto render_compact_gpu = [&]() {
+        if (gpu_group_rendered) return;
         ss << "<C=" << col_gpu << ">" << (hud.label_gpu.empty() ? "GPU" : hud.label_gpu) << " : <C><C=" << col_val << ">";
         bool prev = false;
         if (gpu.temperature_c > 0) {
@@ -653,12 +660,140 @@ bool RTSSBridge::update_osd(
         }
         ss << "<C>\n";
         gpu_group_rendered = true;
-    }
+    };
+
+    auto render_compact_vram = [&]() {
+        if (vram_group_rendered) return;
+        float vram_used_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);
+        float vram_tot_mb = static_cast<float>(gpu.vram_total_bytes) / (1024.0f * 1024.0f);
+        ss << "<C=" << col_gpu << ">VRAM : <C><C=" << col_val << ">" << static_cast<int>(vram_used_mb);
+        if (vram_tot_mb > 0) ss << " / " << static_cast<int>(vram_tot_mb) << " MB";
+        else ss << " MB";
+        if (gpu.vram_temp_c > 0) {
+            ss << ", " << gpu.vram_temp_c << " C";
+        }
+        if (gpu.memory_clock_mhz > 0) {
+            ss << ", " << gpu.memory_clock_mhz << " MHz";
+        }
+        ss << "<C>\n";
+        vram_group_rendered = true;
+    };
+
+    auto render_compact_cpu = [&]() {
+        if (cpu_group_rendered) return;
+        double usage = (primary && primary->is_alive) ? primary->cpu_percent : cpu.total_usage_percent;
+        ss << "<C=" << col_cpu << ">" << (hud.label_cpu.empty() ? "CPU" : hud.label_cpu) << " : <C><C=" << col_val << ">";
+        bool prev = false;
+        if (cpu.package_temp_c > 0) {
+            ss << cpu.package_temp_c << " C";
+            prev = true;
+        }
+        if (prev) ss << ", ";
+        ss << std::fixed << std::setprecision(1) << usage << "%";
+        if (cpu.package_power_w > 0) {
+            ss << ", " << cpu.package_power_w << " W";
+        }
+        if (primary && primary->is_alive) {
+            ss << " (" << wide_to_utf8(primary->name) << ")";
+        }
+        ss << "<C>\n";
+        cpu_group_rendered = true;
+    };
+
+    auto render_compact_ram = [&]() {
+        if (ram_group_rendered) return;
+        float ram_tot_gb = static_cast<float>(proc_mon.get_system_ram_total()) / (1024.0f * 1024.0f * 1024.0f);
+        float page_gb = static_cast<float>(proc_mon.get_system_commit_used()) / (1024.0f * 1024.0f * 1024.0f);
+        ss << "<C=" << col_ram << ">" << (hud.label_ram.empty() ? "RAM" : hud.label_ram) << " : <C><C=" << col_val << ">"
+           << std::fixed << std::setprecision(1) << ram_gb;
+        if (ram_tot_gb > 0) ss << " / " << std::fixed << std::setprecision(1) << ram_tot_gb << " GB";
+        else ss << " GB";
+        if (page_gb > 0.1f) {
+            ss << ", Pagefile " << std::fixed << std::setprecision(1) << page_gb << " GB";
+        }
+        ss << "<C>\n";
+        ram_group_rendered = true;
+    };
+
+    auto render_compact_fps = [&]() {
+        if (fps_group_rendered) return;
+        ss << "<C=" << col_fps << ">" << (hud.label_fps.empty() ? "FPS" : hud.label_fps) << " : <C><C=" << col_val << ">";
+        if (frames.current_fps > 0.1) {
+            ss << std::fixed << std::setprecision(0) << frames.current_fps << " FPS";
+        } else {
+            ss << "Idle";
+        }
+        if (frames.frametime_ms > 0.0) {
+            ss << ", " << std::fixed << std::setprecision(1) << frames.frametime_ms << " ms";
+        }
+        bool has_extra = false;
+        if (frames.avg_fps > 0.0 || frames.one_percent_low > 0.0) {
+            ss << " (";
+            if (frames.avg_fps > 0.0) {
+                ss << "Avg " << static_cast<int>(frames.avg_fps);
+                has_extra = true;
+            }
+            if (hud.show_1pct_low && frames.one_percent_low > 0.0) {
+                if (has_extra) ss << ", ";
+                ss << "1%: " << static_cast<int>(frames.one_percent_low);
+                has_extra = true;
+            }
+            if (hud.show_01pct_low && frames.zero_one_percent_low > 0.0) {
+                if (has_extra) ss << ", ";
+                ss << "0.1%: " << static_cast<int>(frames.zero_one_percent_low);
+            }
+            ss << ")";
+        }
+        if (hud.show_stutters && frames.stutter_count > 0) {
+            ss << " <C=" << col_stut << ">[HITCH: " << frames.stutter_count << "]<C>";
+        }
+        ss << "<C>\n";
+        fps_group_rendered = true;
+    };
 
     if (!hud.sensors.empty()) {
         for (const auto& s : hud.sensors) {
             if (!s.enabled) continue;
-            if (gpu_group_rendered && (s.id == "gpu_usage" || s.id == "gpu_clock" || s.id == "gpu_temp" || s.id == "gpu_hotspot" || s.id == "gpu_power")) {
+
+            // Compact Single-Line GPU Grouping
+            if (hud.group_gpu_on_one_line && (s.id == "gpu_usage" || s.id == "gpu_clock" || s.id == "gpu_temp" || s.id == "gpu_hotspot" || s.id == "gpu_power")) {
+                render_compact_gpu();
+                continue;
+            }
+
+            // Compact Single-Line VRAM Grouping
+            if (hud.group_vram_on_one_line && (s.id == "gpu_vram" || s.id == "gpu_vram_temp" || s.id == "gpu_mem_clock")) {
+                render_compact_vram();
+                continue;
+            }
+
+            // Compact Single-Line CPU Grouping
+            if (hud.group_cpu_on_one_line && (s.id == "cpu_usage" || s.id == "cpu_temp" || s.id == "cpu_power")) {
+                render_compact_cpu();
+                continue;
+            }
+
+            // Compact Single-Line RAM / Pagefile Grouping
+            if (hud.group_ram_on_one_line && (s.id == "ram_usage" || s.id == "pagefile")) {
+                render_compact_ram();
+                continue;
+            }
+
+            // Compact Single-Line FPS Grouping
+            if (hud.group_fps_on_one_line && (s.id == "fps" || s.id == "fps_avg" || s.id == "fps_1pct" || s.id == "fps_01pct" || s.id == "fps_min_max" || s.id == "frametime")) {
+                render_compact_fps();
+                // If frametime has embedded line graph requested, still render the graph below!
+                if (s.id == "frametime" && (s.show_graph || hud.mode_frametime == SensorDisplayMode::GraphOnly || hud.mode_frametime == SensorDisplayMode::TextAndGraph)) {
+                    DWORD graph_offset = dwBufferOffset;
+                    DWORD dwFlags = (hud.rtss_graph_filled ? RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FILLED : 0) | RTSS_EMBEDDED_OBJECT_GRAPH_FLAG_FRAMETIME;
+                    float max_ft = (hud.rtss_frametime_max_ms > 0.0f) ? (hud.rtss_frametime_max_ms * 1000.0f) : 50000.0f;
+                    DWORD sz = embed_graph(graph_buffer, sizeof(graph_buffer), dwBufferOffset, nullptr, 0, hud.rtss_graph_width, hud.rtss_graph_height, 1, 0.0f, max_ft, dwFlags);
+                    if (sz > 0) {
+                        char obj_tag[32];
+                        sprintf_s(obj_tag, "<OBJ=%08X>\n", graph_offset);
+                        ss << "<C=" << col_ft << ">" << obj_tag << "<C>";
+                    }
+                }
                 continue;
             }
 
@@ -740,12 +875,33 @@ bool RTSSBridge::update_osd(
                 }
             } else if (s.id == "cpu_cores") {
                 if (!cpu.per_core_usage.empty()) {
-                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">";
-                    for (size_t c = 0; c < cpu.per_core_usage.size() && c < 8; ++c) {
-                        ss << "C" << c << ":" << static_cast<int>(cpu.per_core_usage[c]) << "% ";
+                    if (hud.cpu_cores_in_column) {
+                        // MSI Afterburner Style: Each core in its own row/column (в столбик)
+                        for (size_t c = 0; c < cpu.per_core_usage.size(); ++c) {
+                            ss << "<C=" << col << ">CPU" << (c + 1) << " : <C><C=" << col_val << ">"
+                               << static_cast<int>(std::round(cpu.per_core_usage[c])) << "%<C>\n";
+                        }
+                    } else if (hud.group_cpu_cores_on_one_line) {
+                        // Group ALL cores into 1 compact line
+                        ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">";
+                        for (size_t c = 0; c < cpu.per_core_usage.size(); ++c) {
+                            if (c > 0) ss << " ";
+                            ss << static_cast<int>(std::round(cpu.per_core_usage[c])) << "%";
+                        }
+                        ss << "<C>\n";
+                    } else {
+                        // Grouped with row wrap (e.g. 8 cores per line)
+                        size_t per_row = (hud.cpu_cores_per_row > 0) ? static_cast<size_t>(hud.cpu_cores_per_row) : 8;
+                        for (size_t start_c = 0; start_c < cpu.per_core_usage.size(); start_c += per_row) {
+                            size_t end_c = (std::min)(start_c + per_row, cpu.per_core_usage.size());
+                            ss << "<C=" << col << ">CPU " << (start_c + 1) << "-" << end_c << " : <C><C=" << col_val << ">";
+                            for (size_t c = start_c; c < end_c; ++c) {
+                                if (c > start_c) ss << " ";
+                                ss << static_cast<int>(std::round(cpu.per_core_usage[c])) << "%";
+                            }
+                            ss << "<C>\n";
+                        }
                     }
-                    if (cpu.per_core_usage.size() > 8) ss << "...";
-                    ss << "<C>\n";
                 }
             } else if (s.id == "ram_usage") {
                 ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << std::fixed << std::setprecision(1) << ram_gb << " GB<C>\n";
@@ -821,10 +977,19 @@ bool RTSSBridge::update_osd(
                 }
             }
         }
+
+        // Render any remaining compact groups if none of their individual sensors were activated in the list
+        if (hud.group_gpu_on_one_line && !gpu_group_rendered) render_compact_gpu();
+        if (hud.group_vram_on_one_line && !vram_group_rendered) render_compact_vram();
+        if (hud.group_cpu_on_one_line && !cpu_group_rendered) render_compact_cpu();
+        if (hud.group_ram_on_one_line && !ram_group_rendered) render_compact_ram();
+        if (hud.group_fps_on_one_line && !fps_group_rendered) render_compact_fps();
     } else {
         // Fallback default rendering
-        std::string gpu_name = hud.label_gpu.empty() ? "GPU" : hud.label_gpu;
-        if (hud.mode_gpu != SensorDisplayMode::Disabled) {
+        if (hud.group_gpu_on_one_line) {
+            render_compact_gpu();
+        } else if (hud.mode_gpu != SensorDisplayMode::Disabled) {
+            std::string gpu_name = hud.label_gpu.empty() ? "GPU" : hud.label_gpu;
             ss << "<C=" << col_gpu << ">" << gpu_name << " : <C><C=" << col_val << ">";
             if (hud.show_gpu_usage) ss << gpu.core_usage_percent << "% ";
             if (hud.show_gpu_temp && gpu.temperature_c > 0) ss << "| " << gpu.temperature_c << " C ";
@@ -834,9 +999,14 @@ bool RTSSBridge::update_osd(
             if (hud.show_gpu_power && gpu.power_watts > 0) ss << "| " << gpu.power_watts << " W ";
             ss << "<C>\n";
         }
+        if (hud.group_vram_on_one_line) {
+            render_compact_vram();
+        }
 
-        std::string cpu_name = hud.label_cpu.empty() ? "CPU" : hud.label_cpu;
-        if (hud.mode_cpu != SensorDisplayMode::Disabled) {
+        if (hud.group_cpu_on_one_line) {
+            render_compact_cpu();
+        } else if (hud.mode_cpu != SensorDisplayMode::Disabled) {
+            std::string cpu_name = hud.label_cpu.empty() ? "CPU" : hud.label_cpu;
             ss << "<C=" << col_cpu << ">" << cpu_name << " : <C><C=" << col_val << ">";
             double u = (primary && primary->is_alive) ? primary->cpu_percent : cpu.total_usage_percent;
             ss << std::fixed << std::setprecision(1) << u << "% ";
@@ -845,7 +1015,40 @@ bool RTSSBridge::update_osd(
             ss << "<C>\n";
         }
 
-        if (hud.mode_fps != SensorDisplayMode::Disabled) {
+        if (hud.show_cpu_per_core && !cpu.per_core_usage.empty()) {
+            if (hud.cpu_cores_in_column) {
+                for (size_t c = 0; c < cpu.per_core_usage.size(); ++c) {
+                    ss << "<C=" << col_cpu << ">CPU" << (c + 1) << " : <C><C=" << col_val << ">"
+                       << static_cast<int>(std::round(cpu.per_core_usage[c])) << "%<C>\n";
+                }
+            } else if (hud.group_cpu_cores_on_one_line) {
+                ss << "<C=" << col_cpu << ">CORES : <C><C=" << col_val << ">";
+                for (size_t c = 0; c < cpu.per_core_usage.size(); ++c) {
+                    if (c > 0) ss << " ";
+                    ss << static_cast<int>(std::round(cpu.per_core_usage[c])) << "%";
+                }
+                ss << "<C>\n";
+            } else {
+                size_t per_row = (hud.cpu_cores_per_row > 0) ? static_cast<size_t>(hud.cpu_cores_per_row) : 8;
+                for (size_t start_c = 0; start_c < cpu.per_core_usage.size(); start_c += per_row) {
+                    size_t end_c = (std::min)(start_c + per_row, cpu.per_core_usage.size());
+                    ss << "<C=" << col_cpu << ">CPU " << (start_c + 1) << "-" << end_c << " : <C><C=" << col_val << ">";
+                    for (size_t c = start_c; c < end_c; ++c) {
+                        if (c > start_c) ss << " ";
+                        ss << static_cast<int>(std::round(cpu.per_core_usage[c])) << "%";
+                    }
+                    ss << "<C>\n";
+                }
+            }
+        }
+
+        if (hud.group_ram_on_one_line) {
+            render_compact_ram();
+        }
+
+        if (hud.group_fps_on_one_line) {
+            render_compact_fps();
+        } else if (hud.mode_fps != SensorDisplayMode::Disabled) {
             ss << "<C=" << col_fps << ">FPS : <C><C=" << col_val << ">" << std::fixed << std::setprecision(0) << frames.current_fps;
             if (hud.show_1pct_low && frames.one_percent_low > 0.0) {
                 ss << " (1%: " << static_cast<int>(frames.one_percent_low) << ")";

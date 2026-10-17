@@ -1597,9 +1597,55 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
     ImGui::NextColumn();
     ImGui::Checkbox("Show Bottleneck / Saturation Limit Badge", &hud.show_bottleneck_indicator);
     ImGui::Checkbox("Show Monitored Secondary Apps Tax", &hud.show_secondary_apps);
-    ImGui::Checkbox("Compact Single-Line GPU Grouping", &hud.group_gpu_on_one_line);
-    ImGui::TextDisabled("GPU: 65 C, Hotspot 78 C, 1750 MHz, 99%, 115 W");
     ImGui::Columns(1);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // Compact Single-Line Metric Groupings
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "COMPACT SINGLE-LINE METRIC GROUPING (AFTERBURNER MAX)");
+    ImGui::Columns(2, "CompactGroupCols", false);
+    ImGui::Checkbox("Compact GPU Line", &hud.group_gpu_on_one_line);
+    ImGui::TextDisabled("GPU : 65 C, Hotspot 78 C, 1750 MHz, 99%, 115 W");
+    ImGui::Checkbox("Compact VRAM Line", &hud.group_vram_on_one_line);
+    ImGui::TextDisabled("VRAM : 4850 / 6144 MB, 72 C, 1750 MHz");
+    ImGui::Checkbox("Compact CPU Line", &hud.group_cpu_on_one_line);
+    ImGui::TextDisabled("CPU : 62 C, 48.5%, 65 W");
+    ImGui::NextColumn();
+    ImGui::Checkbox("Compact RAM / Pagefile Line", &hud.group_ram_on_one_line);
+    ImGui::TextDisabled("RAM : 14.2 / 31.9 GB, Pagefile 16.5 GB");
+    ImGui::Checkbox("Compact FPS / Latency Line", &hud.group_fps_on_one_line);
+    ImGui::TextDisabled("FPS : 144 FPS, 6.9 ms (Avg 142, 1% Low 115)");
+    ImGui::Columns(1);
+
+    ImGui::Spacing();
+    ImGui::Separator();
+    ImGui::Spacing();
+
+    // CPU Per-Core Display Formatting (MSI Afterburner Style)
+    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "CPU CORES LOAD DISPLAY (MSI AFTERBURNER STYLE)");
+    ImGui::Checkbox("Display each CPU Core in Column (Отдельно по каждому ядру в столбик)", &hud.cpu_cores_in_column);
+    ImGui::TextDisabled("Shows CPU1: 45%%, CPU2: 60%% on individual vertical rows in RTSS OSD (matching MSI Afterburner).");
+
+    if (!hud.cpu_cores_in_column) {
+        ImGui::Indent(20.0f * fonts.dpi_scale);
+        ImGui::Checkbox("Group CPU Cores into 1 Line (Сгруппировать все ядра в одну строку)", &hud.group_cpu_cores_on_one_line);
+        ImGui::TextDisabled("When checked: CPU Cores: 45%% 60%% 25%%... in a single line. When unchecked: wrapped in clean rows.");
+        if (!hud.group_cpu_cores_on_one_line) {
+            ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
+            const char* wrap_opts[] = { "4 Cores per Row", "6 Cores per Row", "8 Cores per Row", "12 Cores per Row", "16 Cores per Row" };
+            int wrap_vals[] = { 4, 6, 8, 12, 16 };
+            int cur_w_idx = 2; // Default 8
+            for (int w = 0; w < 5; ++w) {
+                if (hud.cpu_cores_per_row == wrap_vals[w]) { cur_w_idx = w; break; }
+            }
+            if (ImGui::Combo("Cores Per Row", &cur_w_idx, wrap_opts, IM_ARRAYSIZE(wrap_opts))) {
+                hud.cpu_cores_per_row = wrap_vals[cur_w_idx];
+            }
+        }
+        ImGui::Unindent(20.0f * fonts.dpi_scale);
+    }
 
     ImGui::Separator();
     ImGui::Spacing();
@@ -1731,7 +1777,17 @@ void DashboardView::render_rtss_mini_hud(
     if (is_benchmarking_) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
     if (hud.show_gpu_usage || hud.show_gpu_temp || hud.show_gpu_vram || hud.show_gpu_clock) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
     if (hud.show_cpu_usage) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
-    if (hud.show_cpu_per_core) hud_height += 22.0f * hud.font_scale * fonts.dpi_scale;
+    if (hud.show_cpu_per_core && !cpu.per_core_usage.empty()) {
+        if (hud.cpu_cores_in_column) {
+            hud_height += static_cast<float>(cpu.per_core_usage.size()) * 20.0f * hud.font_scale * fonts.dpi_scale;
+        } else if (!hud.group_cpu_cores_on_one_line) {
+            size_t per_row = (hud.cpu_cores_per_row > 0) ? static_cast<size_t>(hud.cpu_cores_per_row) : 8;
+            size_t rows = (cpu.per_core_usage.size() + per_row - 1) / per_row;
+            hud_height += static_cast<float>(rows) * 22.0f * hud.font_scale * fonts.dpi_scale;
+        } else {
+            hud_height += 22.0f * hud.font_scale * fonts.dpi_scale;
+        }
+    }
     if (hud.show_system_ram) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
     if (hud.show_fps) hud_height += 24.0f * hud.font_scale * fonts.dpi_scale;
     if (hud.show_stutters) hud_height += 22.0f * hud.font_scale * fonts.dpi_scale;
@@ -1856,14 +1912,35 @@ void DashboardView::render_rtss_mini_hud(
 
         // Per-Core Load Breakdown
         if (hud.show_cpu_per_core && !cpu.per_core_usage.empty()) {
-            ImGui::TextColored(hex_to_imvec4(hud.color_cpu), "CORES: ");
-            ImGui::SameLine();
-            std::stringstream core_ss;
-            for (size_t c = 0; c < cpu.per_core_usage.size() && c < 6; ++c) {
-                core_ss << "C" << c << ":" << static_cast<int>(cpu.per_core_usage[c]) << "% ";
+            if (hud.cpu_cores_in_column) {
+                for (size_t c = 0; c < cpu.per_core_usage.size(); ++c) {
+                    ImGui::TextColored(hex_to_imvec4(hud.color_cpu), "CPU%d : ", static_cast<int>(c + 1));
+                    ImGui::SameLine();
+                    ImGui::TextColored(hex_to_imvec4(hud.color_values), "%d%%", static_cast<int>(std::round(cpu.per_core_usage[c])));
+                }
+            } else if (hud.group_cpu_cores_on_one_line) {
+                ImGui::TextColored(hex_to_imvec4(hud.color_cpu), "CORES: ");
+                ImGui::SameLine();
+                std::stringstream core_ss;
+                for (size_t c = 0; c < cpu.per_core_usage.size(); ++c) {
+                    if (c > 0) core_ss << " ";
+                    core_ss << static_cast<int>(std::round(cpu.per_core_usage[c])) << "%";
+                }
+                ImGui::TextColored(hex_to_imvec4(hud.color_values), "%s", core_ss.str().c_str());
+            } else {
+                size_t per_row = (hud.cpu_cores_per_row > 0) ? static_cast<size_t>(hud.cpu_cores_per_row) : 8;
+                for (size_t start_c = 0; start_c < cpu.per_core_usage.size(); start_c += per_row) {
+                    size_t end_c = (std::min)(start_c + per_row, cpu.per_core_usage.size());
+                    ImGui::TextColored(hex_to_imvec4(hud.color_cpu), "C%d-%d: ", static_cast<int>(start_c + 1), static_cast<int>(end_c));
+                    ImGui::SameLine();
+                    std::stringstream core_ss;
+                    for (size_t c = start_c; c < end_c; ++c) {
+                        if (c > start_c) core_ss << " ";
+                        core_ss << static_cast<int>(std::round(cpu.per_core_usage[c])) << "%";
+                    }
+                    ImGui::TextColored(hex_to_imvec4(hud.color_values), "%s", core_ss.str().c_str());
+                }
             }
-            if (cpu.per_core_usage.size() > 6) core_ss << "...";
-            ImGui::TextColored(hex_to_imvec4(hud.color_values), "%s", core_ss.str().c_str());
         }
     }
 

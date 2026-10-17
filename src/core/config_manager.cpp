@@ -158,6 +158,13 @@ static void parse_hud_json(const json& j, HudConfig& hud) {
     hud.autostart_with_windows = j.value("autostart_with_windows", false);
     hud.start_minimized_to_tray = j.value("start_minimized_to_tray", false);
     hud.group_gpu_on_one_line = j.value("group_gpu_on_one_line", false);
+    hud.group_vram_on_one_line = j.value("group_vram_on_one_line", false);
+    hud.group_cpu_on_one_line = j.value("group_cpu_on_one_line", false);
+    hud.group_ram_on_one_line = j.value("group_ram_on_one_line", false);
+    hud.group_fps_on_one_line = j.value("group_fps_on_one_line", false);
+    hud.cpu_cores_in_column = j.value("cpu_cores_in_column", false);
+    hud.group_cpu_cores_on_one_line = j.value("group_cpu_cores_on_one_line", true);
+    hud.cpu_cores_per_row = j.value("cpu_cores_per_row", 8);
     hud.rtss_osd_visible = j.value("rtss_osd_visible", true);
 
     if (j.contains("sensors") && j["sensors"].is_array()) {
@@ -251,6 +258,13 @@ static json serialize_hud_json(const HudConfig& hud) {
         {"autostart_with_windows", hud.autostart_with_windows},
         {"start_minimized_to_tray", hud.start_minimized_to_tray},
         {"group_gpu_on_one_line", hud.group_gpu_on_one_line},
+        {"group_vram_on_one_line", hud.group_vram_on_one_line},
+        {"group_cpu_on_one_line", hud.group_cpu_on_one_line},
+        {"group_ram_on_one_line", hud.group_ram_on_one_line},
+        {"group_fps_on_one_line", hud.group_fps_on_one_line},
+        {"cpu_cores_in_column", hud.cpu_cores_in_column},
+        {"group_cpu_cores_on_one_line", hud.group_cpu_cores_on_one_line},
+        {"cpu_cores_per_row", hud.cpu_cores_per_row},
         {"rtss_osd_visible", hud.rtss_osd_visible}
     };
 
