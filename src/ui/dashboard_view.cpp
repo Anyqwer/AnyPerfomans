@@ -928,14 +928,31 @@ void DashboardView::render_fan_control_tab(
     ImGui::Spacing();
 
     // Mode Selection Radio Buttons
-    ImGui::Checkbox("Enable Custom Fan Control", &fan_cfg.enabled);
+    if (ImGui::Checkbox("Enable Custom Fan Control", &fan_cfg.enabled)) {
+        if (!fan_cfg.enabled) {
+            hw_ctrl.restore_auto_fans();
+        }
+        config_mgr.save_to_file();
+    }
     ImGui::SameLine(0, 20.0f * s);
     if (fan_cfg.enabled) {
+        int old_mode = fan_cfg.mode;
         ImGui::RadioButton("Auto (VBIOS)", &fan_cfg.mode, 0);
         ImGui::SameLine(0, 15.0f * s);
         ImGui::RadioButton("Manual Fixed %", &fan_cfg.mode, 1);
         ImGui::SameLine(0, 15.0f * s);
         ImGui::RadioButton("Custom Fan Curve", &fan_cfg.mode, 2);
+        if (fan_cfg.mode != old_mode) {
+            if (fan_cfg.mode == 0) {
+                hw_ctrl.restore_auto_fans();
+            } else if (fan_cfg.mode == 1) {
+                hw_ctrl.set_fan_speed(fan_cfg.fixed_speed_pct);
+            } else if (fan_cfg.mode == 2) {
+                hw_ctrl.apply_hardware_fan_curve(fan_cfg);
+                hw_ctrl.update_fan_curve(fan_cfg, gpu.temperature_c, gpu.hotspot_temp_c, gpu.vram_temp_c);
+            }
+            config_mgr.save_to_file();
+        }
     }
 
     ImGui::Spacing();
@@ -955,8 +972,30 @@ void DashboardView::render_fan_control_tab(
 
         ImGui::Spacing();
 
+        ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "FAN TEMPERATURE SOURCE:");
+        ImGui::RadioButton("GPU Core (Edge)", &fan_cfg.temp_source, 0);
+        ImGui::SameLine(0, 15.0f * s);
+        ImGui::RadioButton("GPU Hotspot (Junction) [Recommended for RDNA]", &fan_cfg.temp_source, 1);
+        ImGui::SameLine(0, 15.0f * s);
+        ImGui::RadioButton("VRAM / Memory", &fan_cfg.temp_source, 2);
+
+        int live_temp = gpu.temperature_c;
+        const char* temp_source_name = "Core";
+        if (fan_cfg.temp_source == 1 && gpu.hotspot_temp_c > 0) {
+            live_temp = gpu.hotspot_temp_c;
+            temp_source_name = "Hotspot";
+        } else if (fan_cfg.temp_source == 2 && gpu.vram_temp_c > 0) {
+            live_temp = gpu.vram_temp_c;
+            temp_source_name = "VRAM";
+        }
+
+        ImGui::Spacing();
+
+        char plot_x_label[64];
+        snprintf(plot_x_label, sizeof(plot_x_label), "GPU %s Temperature (C)", temp_source_name);
+
         if (ImPlot::BeginPlot("##FanCurvePlot", ImVec2(-1, 260.0f * s), ImPlotFlags_NoTitle | ImPlotFlags_NoBoxSelect)) {
-            ImPlot::SetupAxes("GPU Temperature (C)", "Fan Speed (%)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
+            ImPlot::SetupAxes(plot_x_label, "Fan Speed (%)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
             ImPlot::SetupAxesLimits(20.0, 100.0, 0.0, 100.0, ImPlotCond_Always);
 
             std::vector<double> xs, ys;
@@ -971,12 +1010,14 @@ void DashboardView::render_fan_control_tab(
             ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle, 6.0f, ImVec4(0.00f, 1.00f, 0.60f, 1.0f), 2.0f, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
             ImPlot::PlotScatter("Points", xs.data(), ys.data(), static_cast<int>(xs.size()));
 
-            if (gpu.temperature_c >= 20 && gpu.temperature_c <= 100) {
-                double cur_t = static_cast<double>(gpu.temperature_c);
+            if (live_temp >= 20 && live_temp <= 100) {
+                double cur_t = static_cast<double>(live_temp);
                 double t_xs[2] = { cur_t, cur_t };
                 double t_ys[2] = { 0.0, 100.0 };
                 ImPlot::SetNextLineStyle(ImVec4(1.0f, 0.40f, 0.10f, 0.85f), 1.5f);
-                ImPlot::PlotLine("Live Temp", t_xs, t_ys, 2);
+                char line_label[64];
+                snprintf(line_label, sizeof(line_label), "Live %s (%d C)", temp_source_name, live_temp);
+                ImPlot::PlotLine(line_label, t_xs, t_ys, 2);
             }
 
             ImPlot::EndPlot();
@@ -1001,12 +1042,14 @@ void DashboardView::render_fan_control_tab(
             std::sort(fan_cfg.points.begin(), fan_cfg.points.end(), [](const FanPoint& a, const FanPoint& b) {
                 return a.temp_c < b.temp_c;
             });
-            hw_ctrl.update_fan_curve(fan_cfg, gpu.temperature_c);
+            hw_ctrl.apply_hardware_fan_curve(fan_cfg);
+            hw_ctrl.update_fan_curve(fan_cfg, gpu.temperature_c, gpu.hotspot_temp_c, gpu.vram_temp_c);
             config_mgr.save_to_file();
         }
         ImGui::SameLine();
         if (ImGui::Button("Reset to Defaults", ImVec2(140.0f * s, 32.0f * s))) {
             fan_cfg.points = { { 30, 0 }, { 50, 40 }, { 65, 60 }, { 80, 80 }, { 90, 100 } };
+            hw_ctrl.apply_hardware_fan_curve(fan_cfg);
             config_mgr.save_to_file();
         }
     } else {
@@ -1014,6 +1057,8 @@ void DashboardView::render_fan_control_tab(
         if (ImGui::Button("Enable Custom Fan Curve", ImVec2(200.0f * s, 32.0f * s))) {
             fan_cfg.enabled = true;
             fan_cfg.mode = 2;
+            hw_ctrl.apply_hardware_fan_curve(fan_cfg);
+            hw_ctrl.update_fan_curve(fan_cfg, gpu.temperature_c, gpu.hotspot_temp_c, gpu.vram_temp_c);
             config_mgr.save_to_file();
         }
     }
@@ -1083,6 +1128,20 @@ void DashboardView::render_overclock_tab(
         ImGui::TextDisabled("- NVIDIA NVAPI limits: VRAM [-1000..+2000 MHz], Power [50..130%%]");
     } else {
         ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.85f, 1.0f), "[GENERIC GPU DETECTED]");
+    }
+
+    if (hw_ctrl.is_safe_mode_engaged()) {
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.35f, 0.08f, 0.08f, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.00f, 0.25f, 0.25f, 1.0f));
+        ImGui::BeginChild("SafeModeBanner", ImVec2(0, 56.0f * s), true);
+        ImGui::PushFont(fonts.bold);
+        ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f), "[!] SAFE MODE ACTIVE - STARTUP OVERCLOCK RESET");
+        ImGui::PopFont();
+        ImGui::TextColored(ImVec4(0.9f, 0.85f, 0.85f, 1.0f), 
+            "A crash or TDR reset was detected during previous startup. Startup overclocking was safely disabled to protect your Windows session.");
+        ImGui::EndChild();
+        ImGui::PopStyleColor(2);
+        ImGui::Spacing();
     }
 
     if (hw_ctrl.get_last_oc_status() != HardwareController::HardwareOcStatus::NotApplied) {
@@ -1538,6 +1597,8 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
     ImGui::NextColumn();
     ImGui::Checkbox("Show Bottleneck / Saturation Limit Badge", &hud.show_bottleneck_indicator);
     ImGui::Checkbox("Show Monitored Secondary Apps Tax", &hud.show_secondary_apps);
+    ImGui::Checkbox("Compact Single-Line GPU Grouping", &hud.group_gpu_on_one_line);
+    ImGui::TextDisabled("GPU: 65 C, Hotspot 78 C, 1750 MHz, 99%, 115 W");
     ImGui::Columns(1);
 
     ImGui::Separator();
@@ -1605,8 +1666,41 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
 
     // 5. Hotkeys Configuration
     ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "HOTKEYS & SHORTCUTS");
-    ImGui::Text("Toggle AnyPerfomans Dashboard: %s", ConfigManager::key_to_string(hotkeys.toggle_overlay_key).c_str());
-    ImGui::Text("Toggle Benchmark Run: %s", ConfigManager::key_to_string(hotkeys.toggle_benchmark_key).c_str());
+
+    const struct { const char* name; UINT vk; } common_keys[] = {
+        { "F1", VK_F1 }, { "F2", VK_F2 }, { "F3", VK_F3 }, { "F4", VK_F4 },
+        { "F5", VK_F5 }, { "F6", VK_F6 }, { "F7", VK_F7 }, { "F8", VK_F8 },
+        { "F9", VK_F9 }, { "F10", VK_F10 }, { "F11", VK_F11 }, { "F12", VK_F12 },
+        { "Insert", VK_INSERT }, { "Delete", VK_DELETE }, { "Home", VK_HOME },
+        { "End", VK_END }, { "Page Up", VK_PRIOR }, { "Page Down", VK_NEXT },
+        { "Scroll Lock", VK_SCROLL }, { "Pause", VK_PAUSE }, { "` (Tilde)", VK_OEM_3 }
+    };
+
+    auto render_key_combo = [&](const char* label, UINT& current_key) {
+        ImGui::Text("%s:", label);
+        ImGui::SameLine(360.0f * fonts.dpi_scale);
+        std::string cur_str = ConfigManager::key_to_string(current_key);
+        std::string combo_id = std::string("##KeyCombo_") + label;
+        ImGui::SetNextItemWidth(160.0f * fonts.dpi_scale);
+        if (ImGui::BeginCombo(combo_id.c_str(), cur_str.c_str())) {
+            for (const auto& k : common_keys) {
+                bool is_sel = (current_key == k.vk);
+                if (ImGui::Selectable(k.name, is_sel)) {
+                    current_key = k.vk;
+                }
+                if (is_sel) ImGui::SetItemDefaultFocus();
+            }
+            ImGui::EndCombo();
+        }
+    };
+
+    render_key_combo("Toggle AnyPerfomans Dashboard Window", hotkeys.toggle_overlay_key);
+    render_key_combo("Toggle RTSS In-Game OSD (Show / Hide Overlay)", hotkeys.toggle_rtss_osd_key);
+    render_key_combo("Toggle Benchmark Session Recording", hotkeys.toggle_benchmark_key);
+
+    ImGui::Spacing();
+    ImGui::Checkbox("Enable Profile Quick-Switch Hotkeys (Ctrl + Shift + 1..5)", &hotkeys.enable_profile_hotkeys);
+    ImGui::TextDisabled("Quickly switches hardware overclocking, fan curves, framerate limits, and OSD styling on the fly.");
 
     ImGui::Spacing();
     ImGui::PushFont(fonts.bold);

@@ -42,9 +42,22 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
     anyperf::DashboardView dashboard_view;
     anyperf::RTSSBridge rtss_bridge;
 
-    // Apply Overclock at startup if enabled in active profile
-    if (config_mgr.get_oc().enabled && config_mgr.get_oc().apply_at_startup) {
-        hw_ctrl.apply_overclock(config_mgr.get_oc());
+    // Check for previous session crash / TDR to engage Safe Mode
+    bool safe_mode_triggered = hw_ctrl.check_and_handle_safe_mode();
+    if (safe_mode_triggered) {
+        // Automatically disable apply_at_startup in config to prevent boot-loop
+        auto& oc = config_mgr.get_oc();
+        oc.enabled = false;
+        oc.apply_at_startup = false;
+        config_mgr.save_to_file();
+    } else {
+        // Place startup canary for this session
+        hw_ctrl.mark_startup_begin();
+
+        // Apply Overclock at startup if enabled in active profile
+        if (config_mgr.get_oc().enabled && config_mgr.get_oc().apply_at_startup) {
+            hw_ctrl.apply_overclock(config_mgr.get_oc());
+        }
     }
 
     // Apply RTSS framerate limit if configured
@@ -197,11 +210,16 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
             // 9. Evaluate Hardware Fan Curve (every 500ms)
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now - last_fan_time).count() >= 500) {
                 int gpu_temp = 0;
+                int hotspot_temp = 0;
+                int vram_temp = 0;
                 {
                     std::lock_guard<std::mutex> lock(telemetry_mutex);
-                    gpu_temp = gpu_mon.get_metrics().temperature_c;
+                    const auto& g = gpu_mon.get_metrics();
+                    gpu_temp = g.temperature_c;
+                    hotspot_temp = g.hotspot_temp_c;
+                    vram_temp = g.vram_temp_c;
                 }
-                hw_ctrl.update_fan_curve(config_mgr.get_fan(), gpu_temp);
+                hw_ctrl.update_fan_curve(config_mgr.get_fan(), gpu_temp, hotspot_temp, vram_temp);
                 last_fan_time = now;
             }
 
@@ -228,21 +246,55 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int) {
         // Keep backend minimize_to_tray setting in sync with live settings
         backend.set_minimize_to_tray_on_close(config_mgr.get_hud().minimize_to_tray_on_close);
 
-        // Configurable Hotkey: Toggle Overlay (Default: F11)
+        // Clear startup canary after 10 seconds of stable running
+        static auto app_start_time = std::chrono::steady_clock::now();
+        static bool canary_cleared = false;
+        if (!canary_cleared && std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - app_start_time).count() >= 10) {
+            hw_ctrl.mark_startup_stable();
+            canary_cleared = true;
+        }
+
+        // Hotkey: Toggle AnyPerfomans Dashboard Window (Default: F11)
         UINT toggle_key = config_mgr.get_hotkeys().toggle_overlay_key;
         if (toggle_key != 0 && (GetAsyncKeyState(toggle_key) & 1)) {
-            auto current_mode = backend.get_overlay_mode();
-            anyperf::OverlayMode new_mode;
-            if (current_mode == anyperf::OverlayMode::Dashboard) {
-                if (config_mgr.get_hud().output_to_dx11_overlay && !config_mgr.get_hud().output_to_rtss) {
-                    new_mode = anyperf::OverlayMode::MiniHud;
-                } else {
-                    new_mode = anyperf::OverlayMode::Hidden;
-                }
+            auto mode = backend.get_overlay_mode();
+            if (mode == anyperf::OverlayMode::Dashboard) {
+                backend.set_overlay_mode(anyperf::OverlayMode::Hidden);
             } else {
-                new_mode = anyperf::OverlayMode::Dashboard;
+                backend.set_overlay_mode(anyperf::OverlayMode::Dashboard);
             }
-            backend.set_overlay_mode(new_mode);
+        }
+
+        // Configurable Hotkey: Toggle RTSS In-Game OSD Visibility (Default: F12, like MSI Afterburner)
+        UINT rtss_key = config_mgr.get_hotkeys().toggle_rtss_osd_key;
+        if (rtss_key != 0 && (GetAsyncKeyState(rtss_key) & 1)) {
+            auto& hud = config_mgr.get_hud();
+            hud.rtss_osd_visible = !hud.rtss_osd_visible;
+            if (!hud.rtss_osd_visible) {
+                std::lock_guard<std::mutex> lock(telemetry_mutex);
+                rtss_bridge.clear_osd();
+            }
+        }
+
+        // Profile Quick-Switch Hotkeys (Ctrl + Shift + 1..5)
+        if (config_mgr.get_hotkeys().enable_profile_hotkeys) {
+            bool ctrl = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+            bool shift = (GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0;
+            if (ctrl && shift) {
+                for (int p = 0; p < 5; ++p) {
+                    if (GetAsyncKeyState('1' + p) & 1) {
+                        config_mgr.switch_profile(p);
+                        hw_ctrl.apply_overclock(config_mgr.get_oc());
+                        if (config_mgr.get_fan().enabled) {
+                            hw_ctrl.apply_hardware_fan_curve(config_mgr.get_fan());
+                        }
+                        if (config_mgr.get_framerate_limit() >= 0) {
+                            anyperf::RTSSBridge::set_framerate_limit(config_mgr.get_framerate_limit());
+                        }
+                        break;
+                    }
+                }
+            }
         }
 
         // Configurable Hotkey: Toggle Benchmark Session (Default: F10)

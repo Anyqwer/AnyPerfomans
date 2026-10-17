@@ -181,6 +181,16 @@ bool HardwareController::init_adl() {
                         } else if (i == 9) { // OD8_POWER_PERCENTAGE
                             adl_od8_min_power_pct_ = s.minValue;
                             adl_od8_max_power_pct_ = s.maxValue;
+                        } else if (i == 15) { // OD8_ZERO_RPM_CONTROL
+                            adl_od8_def_zero_rpm_ = s.defaultValue;
+                        } else if (i >= 19 && i <= 27 && (i % 2 == 1)) {
+                            int node_idx = (i - 19) / 2;
+                            if (node_idx >= 0 && node_idx < 5) {
+                                adl_od8_def_fan_temps_[node_idx] = s.defaultValue;
+                                if (i + 1 < init_settings.count) {
+                                    adl_od8_def_fan_speeds_[node_idx] = init_settings.od8SettingTable[i + 1].defaultValue;
+                                }
+                            }
                         }
                     }
                     break;
@@ -206,7 +216,6 @@ bool HardwareController::set_fan_speed(int speed_pct) {
     if (has_nvapi_ && nv_physical_gpu_ && h_nvapi_) {
         auto q = (pfn_nvapi_QueryInterface)GetProcAddress(h_nvapi_, "nvapi_QueryInterface");
         if (q) {
-            // Structure for NVAPI_COOLER_LEVELS (version 1)
             struct NV_COOLER_LEVEL {
                 int level;
                 int policy;
@@ -232,15 +241,56 @@ bool HardwareController::set_fan_speed(int speed_pct) {
         }
     }
 
-    // 2. AMD Fan Control via ADL
-    if (has_adl_ && adl_context_ && h_adl_) {
+    // 2. AMD Fan Control
+    if (has_adl_ && has_adl_od8_ && adl_context_ && h_adl_) {
+        // Native Overdrive 8 for Navi / RDNA (RX 5000 / 6000 series)
+        auto pCurOD8 = (pfn_ADL2_Overdrive8_Current_Setting_Get)GetProcAddress(h_adl_, "ADL2_Overdrive8_Current_Setting_Get");
+        auto pSetOD8 = (pfn_ADL2_Overdrive8_Setting_Set)GetProcAddress(h_adl_, "ADL2_Overdrive8_Setting_Set");
+        if (pCurOD8 && pSetOD8) {
+            ADLOD8CurrentSetting cur{};
+            cur.count = 64;
+            if (pCurOD8(adl_context_, adl_adapter_index_, &cur) == 0 && cur.count > 0) {
+                ADLOD8SetSetting set_req{};
+                set_req.count = 64;
+                for (int i = 0; i < 64; ++i) {
+                    set_req.od8SettingTable[i].value = cur.Od8SettingTable[i];
+                    set_req.od8SettingTable[i].requested = 0;
+                    set_req.od8SettingTable[i].reset = 0;
+                }
+
+                // Zero-RPM (index 15): If setting > 0%, disable Zero-RPM so fans spin immediately
+                set_req.od8SettingTable[15].value = (speed_pct == 0) ? 1 : 0;
+                set_req.od8SettingTable[15].requested = 1;
+
+                // Fan curve speeds (indices 20, 22, 24, 26, 28)
+                for (int i = 19; i <= 28; ++i) {
+                    set_req.od8SettingTable[i].requested = 1;
+                }
+                for (int node = 0; node < 5; ++node) {
+                    set_req.od8SettingTable[19 + node * 2].value = adl_od8_def_fan_temps_[node];
+                    set_req.od8SettingTable[20 + node * 2].value = speed_pct;
+                }
+
+                ADLOD8CurrentSetting out_cur{};
+                out_cur.count = 64;
+                if (pSetOD8(adl_context_, adl_adapter_index_, &set_req, &out_cur) == 0) {
+                    last_fan_speed_ = speed_pct;
+                    is_manual_fan_ = true;
+                    success = true;
+                }
+            }
+        }
+    } else if (has_adl_ && adl_context_ && h_adl_) {
+        // Fallback for Polaris / Vega GCN cards (proper 6-field ADLODNFanControl)
         auto pSetFan = (pfn_ADL2_OverdriveN_FanControl_Set)GetProcAddress(h_adl_, "ADL2_OverdriveN_FanControl_Set");
         if (pSetFan) {
-            struct ADL_ODN_FANCONTROL {
+            struct ADLODNFanControl {
                 int iMode;       // 1 = user defined
                 int iFanSpeedPercent;
                 int iMinFanLimit;
                 int iTargetFanSpeed;
+                int iTargetTemperature;
+                int iMinPerformanceClock;
             } fanData{};
             fanData.iMode = 1;
             fanData.iFanSpeedPercent = speed_pct;
@@ -258,6 +308,7 @@ bool HardwareController::set_fan_speed(int speed_pct) {
 bool HardwareController::restore_auto_fans() {
     bool restored = false;
 
+    // 1. NVIDIA Auto Restore via NVAPI
     if (has_nvapi_ && nv_physical_gpu_ && h_nvapi_) {
         auto q = (pfn_nvapi_QueryInterface)GetProcAddress(h_nvapi_, "nvapi_QueryInterface");
         if (q) {
@@ -284,14 +335,52 @@ bool HardwareController::restore_auto_fans() {
         }
     }
 
-    if (has_adl_ && adl_context_ && h_adl_) {
+    // 2. AMD Auto Restore (VBIOS defaults)
+    if (has_adl_ && has_adl_od8_ && adl_context_ && h_adl_) {
+        auto pCurOD8 = (pfn_ADL2_Overdrive8_Current_Setting_Get)GetProcAddress(h_adl_, "ADL2_Overdrive8_Current_Setting_Get");
+        auto pSetOD8 = (pfn_ADL2_Overdrive8_Setting_Set)GetProcAddress(h_adl_, "ADL2_Overdrive8_Setting_Set");
+        if (pCurOD8 && pSetOD8) {
+            ADLOD8CurrentSetting cur{};
+            cur.count = 64;
+            if (pCurOD8(adl_context_, adl_adapter_index_, &cur) == 0 && cur.count > 0) {
+                ADLOD8SetSetting set_req{};
+                set_req.count = 64;
+                for (int i = 0; i < 64; ++i) {
+                    set_req.od8SettingTable[i].value = cur.Od8SettingTable[i];
+                    set_req.od8SettingTable[i].requested = 0;
+                    set_req.od8SettingTable[i].reset = 0;
+                }
+
+                // Restore stock Zero RPM
+                set_req.od8SettingTable[15].value = adl_od8_def_zero_rpm_;
+                set_req.od8SettingTable[15].requested = 1;
+
+                // Restore factory fan curve
+                for (int i = 19; i <= 28; ++i) {
+                    set_req.od8SettingTable[i].requested = 1;
+                }
+                for (int node = 0; node < 5; ++node) {
+                    set_req.od8SettingTable[19 + node * 2].value = adl_od8_def_fan_temps_[node];
+                    set_req.od8SettingTable[20 + node * 2].value = adl_od8_def_fan_speeds_[node];
+                }
+
+                ADLOD8CurrentSetting out_cur{};
+                out_cur.count = 64;
+                if (pSetOD8(adl_context_, adl_adapter_index_, &set_req, &out_cur) == 0) {
+                    restored = true;
+                }
+            }
+        }
+    } else if (has_adl_ && adl_context_ && h_adl_) {
         auto pSetFan = (pfn_ADL2_OverdriveN_FanControl_Set)GetProcAddress(h_adl_, "ADL2_OverdriveN_FanControl_Set");
         if (pSetFan) {
-            struct ADL_ODN_FANCONTROL {
+            struct ADLODNFanControl {
                 int iMode;
                 int iFanSpeedPercent;
                 int iMinFanLimit;
                 int iTargetFanSpeed;
+                int iTargetTemperature;
+                int iMinPerformanceClock;
             } fanData{};
             fanData.iMode = 0; // Default VBIOS Auto mode
             if (pSetFan(adl_context_, adl_adapter_index_, &fanData) == 0) {
@@ -305,7 +394,55 @@ bool HardwareController::restore_auto_fans() {
     return restored;
 }
 
-void HardwareController::update_fan_curve(const FanCurveConfig& cfg, int current_gpu_temp) {
+bool HardwareController::apply_hardware_fan_curve(const FanCurveConfig& cfg) {
+    if (!cfg.enabled || cfg.mode == 0) {
+        return restore_auto_fans();
+    }
+    if (cfg.mode == 1) {
+        return set_fan_speed(cfg.fixed_speed_pct);
+    }
+
+    // Direct hardware VBIOS curve flashing on RDNA
+    if (has_adl_ && has_adl_od8_ && adl_context_ && h_adl_) {
+        auto pCurOD8 = (pfn_ADL2_Overdrive8_Current_Setting_Get)GetProcAddress(h_adl_, "ADL2_Overdrive8_Current_Setting_Get");
+        auto pSetOD8 = (pfn_ADL2_Overdrive8_Setting_Set)GetProcAddress(h_adl_, "ADL2_Overdrive8_Setting_Set");
+        if (pCurOD8 && pSetOD8) {
+            ADLOD8CurrentSetting cur{};
+            cur.count = 64;
+            if (pCurOD8(adl_context_, adl_adapter_index_, &cur) == 0 && cur.count > 0) {
+                ADLOD8SetSetting set_req{};
+                set_req.count = 64;
+                for (int i = 0; i < 64; ++i) {
+                    set_req.od8SettingTable[i].value = cur.Od8SettingTable[i];
+                    set_req.od8SettingTable[i].requested = 0;
+                    set_req.od8SettingTable[i].reset = 0;
+                }
+
+                set_req.od8SettingTable[15].value = cfg.zero_rpm_enabled ? 1 : 0;
+                set_req.od8SettingTable[15].requested = 1;
+
+                for (int i = 19; i <= 28; ++i) {
+                    set_req.od8SettingTable[i].requested = 1;
+                }
+
+                for (size_t node = 0; node < 5 && node < cfg.points.size(); ++node) {
+                    set_req.od8SettingTable[19 + node * 2].value = std::clamp(cfg.points[node].temp_c, 25, 100);
+                    set_req.od8SettingTable[20 + node * 2].value = std::clamp(cfg.points[node].fan_pct, 0, 100);
+                }
+
+                ADLOD8CurrentSetting out_cur{};
+                out_cur.count = 64;
+                if (pSetOD8(adl_context_, adl_adapter_index_, &set_req, &out_cur) == 0) {
+                    is_manual_fan_ = true;
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+void HardwareController::update_fan_curve(const FanCurveConfig& cfg, int current_gpu_temp, int current_hotspot_temp, int current_vram_temp) {
     if (!cfg.enabled || cfg.mode == 0) {
         if (is_manual_fan_) {
             restore_auto_fans();
@@ -321,28 +458,36 @@ void HardwareController::update_fan_curve(const FanCurveConfig& cfg, int current
         return;
     }
 
-    // Mode 2: Interactive custom fan curve
-    if (cfg.zero_rpm_enabled && current_gpu_temp < 45) {
+    // Mode 2: Multi-source custom fan curve (Edge, Hotspot, or VRAM)
+    int eval_temp = current_gpu_temp;
+    if (cfg.temp_source == 1 && current_hotspot_temp > 0) {
+        eval_temp = current_hotspot_temp;
+    } else if (cfg.temp_source == 2 && current_vram_temp > 0) {
+        eval_temp = current_vram_temp;
+    }
+
+    // Zero-RPM mode: shut off fans below 45C if enabled
+    if (cfg.zero_rpm_enabled && eval_temp < 45) {
         if (last_fan_speed_ != 0) {
             set_fan_speed(0);
         }
-        last_fan_temp_ = current_gpu_temp;
+        last_fan_temp_ = eval_temp;
         return;
     }
 
     int target_pct = 50;
     if (cfg.points.empty()) {
         target_pct = 50;
-    } else if (current_gpu_temp <= cfg.points.front().temp_c) {
+    } else if (eval_temp <= cfg.points.front().temp_c) {
         target_pct = cfg.points.front().fan_pct;
-    } else if (current_gpu_temp >= cfg.points.back().temp_c) {
+    } else if (eval_temp >= cfg.points.back().temp_c) {
         target_pct = cfg.points.back().fan_pct;
     } else {
         for (size_t i = 0; i + 1 < cfg.points.size(); ++i) {
-            if (current_gpu_temp >= cfg.points[i].temp_c && current_gpu_temp <= cfg.points[i + 1].temp_c) {
+            if (eval_temp >= cfg.points[i].temp_c && eval_temp <= cfg.points[i + 1].temp_c) {
                 double span_t = cfg.points[i + 1].temp_c - cfg.points[i].temp_c;
                 double span_f = cfg.points[i + 1].fan_pct - cfg.points[i].fan_pct;
-                double ratio = span_t > 0.0 ? (current_gpu_temp - cfg.points[i].temp_c) / span_t : 0.0;
+                double ratio = span_t > 0.0 ? (eval_temp - cfg.points[i].temp_c) / span_t : 0.0;
                 target_pct = static_cast<int>(std::round(cfg.points[i].fan_pct + ratio * span_f));
                 break;
             }
@@ -351,14 +496,45 @@ void HardwareController::update_fan_curve(const FanCurveConfig& cfg, int current
     target_pct = std::clamp(target_pct, 0, 100);
 
     // Apply hysteresis when cooling down to prevent rapid oscillatory fan spinups
-    if (target_pct < last_fan_speed_ && (last_fan_temp_ - current_gpu_temp) < cfg.hysteresis_c) {
+    if (target_pct < last_fan_speed_ && (last_fan_temp_ - eval_temp) < cfg.hysteresis_c) {
         return;
     }
 
     if (target_pct != last_fan_speed_) {
         set_fan_speed(target_pct);
-        last_fan_temp_ = current_gpu_temp;
+        last_fan_temp_ = eval_temp;
     }
+}
+
+bool HardwareController::check_and_handle_safe_mode() {
+    const wchar_t* canary_file = L"anyperf_oc_canary.tmp";
+    DWORD attr = GetFileAttributesW(canary_file);
+    if (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY)) {
+        safe_mode_engaged_ = true;
+        last_oc_status_ = HardwareOcStatus::NotApplied;
+        last_oc_message_ = "[SAFE MODE ENGAGED] Previous session crash or TDR detected. Overclock settings reset to factory defaults.";
+        DeleteFileW(canary_file);
+        reset_overclock();
+        restore_auto_fans();
+        return true;
+    }
+    return false;
+}
+
+void HardwareController::mark_startup_begin() {
+    const wchar_t* canary_file = L"anyperf_oc_canary.tmp";
+    HANDLE hFile = CreateFileW(canary_file, GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (hFile != INVALID_HANDLE_VALUE) {
+        const char* msg = "AnyPerfomans Overclock Canary\n";
+        DWORD written = 0;
+        WriteFile(hFile, msg, static_cast<DWORD>(strlen(msg)), &written, nullptr);
+        CloseHandle(hFile);
+    }
+}
+
+void HardwareController::mark_startup_stable() {
+    const wchar_t* canary_file = L"anyperf_oc_canary.tmp";
+    DeleteFileW(canary_file);
 }
 
 #pragma pack(push, 8)

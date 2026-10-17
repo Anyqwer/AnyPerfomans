@@ -582,7 +582,7 @@ bool RTSSBridge::update_osd(
     double benchmark_elapsed_sec
 ) {
     const auto& hud = config_mgr.get_hud();
-    if (!hud.output_to_rtss) {
+    if (!hud.output_to_rtss || !hud.rtss_osd_visible) {
         clear_osd();
         return false;
     }
@@ -628,9 +628,40 @@ bool RTSSBridge::update_osd(
     }
 
     // 2. Telemetry Rows based on customizable sensor order
+    bool gpu_group_rendered = false;
+    if (hud.group_gpu_on_one_line) {
+        ss << "<C=" << col_gpu << ">" << (hud.label_gpu.empty() ? "GPU" : hud.label_gpu) << " : <C><C=" << col_val << ">";
+        bool prev = false;
+        if (gpu.temperature_c > 0) {
+            ss << gpu.temperature_c << " C";
+            prev = true;
+        }
+        if (gpu.hotspot_temp_c > 0) {
+            if (prev) ss << ", ";
+            ss << "Hotspot " << gpu.hotspot_temp_c << " C";
+            prev = true;
+        }
+        if (gpu.core_clock_mhz > 0) {
+            if (prev) ss << ", ";
+            ss << gpu.core_clock_mhz << " MHz";
+            prev = true;
+        }
+        if (prev) ss << ", ";
+        ss << gpu.core_usage_percent << "%";
+        if (gpu.power_watts > 0) {
+            ss << ", " << gpu.power_watts << " W";
+        }
+        ss << "<C>\n";
+        gpu_group_rendered = true;
+    }
+
     if (!hud.sensors.empty()) {
         for (const auto& s : hud.sensors) {
             if (!s.enabled) continue;
+            if (gpu_group_rendered && (s.id == "gpu_usage" || s.id == "gpu_clock" || s.id == "gpu_temp" || s.id == "gpu_hotspot" || s.id == "gpu_power")) {
+                continue;
+            }
+
             std::string default_col = col_gpu;
             if (s.id.rfind("cpu", 0) == 0) default_col = col_cpu;
             else if (s.id.rfind("ram", 0) == 0 || s.id == "pagefile") default_col = col_ram;

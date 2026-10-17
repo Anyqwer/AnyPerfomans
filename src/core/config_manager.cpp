@@ -157,6 +157,8 @@ static void parse_hud_json(const json& j, HudConfig& hud) {
     hud.tray_temp_is_gpu = j.value("tray_temp_is_gpu", true);
     hud.autostart_with_windows = j.value("autostart_with_windows", false);
     hud.start_minimized_to_tray = j.value("start_minimized_to_tray", false);
+    hud.group_gpu_on_one_line = j.value("group_gpu_on_one_line", false);
+    hud.rtss_osd_visible = j.value("rtss_osd_visible", true);
 
     if (j.contains("sensors") && j["sensors"].is_array()) {
         hud.sensors.clear();
@@ -247,7 +249,9 @@ static json serialize_hud_json(const HudConfig& hud) {
         {"show_tray_temperature", hud.show_tray_temperature},
         {"tray_temp_is_gpu", hud.tray_temp_is_gpu},
         {"autostart_with_windows", hud.autostart_with_windows},
-        {"start_minimized_to_tray", hud.start_minimized_to_tray}
+        {"start_minimized_to_tray", hud.start_minimized_to_tray},
+        {"group_gpu_on_one_line", hud.group_gpu_on_one_line},
+        {"rtss_osd_visible", hud.rtss_osd_visible}
     };
 
     json sensors_arr = json::array();
@@ -270,6 +274,7 @@ static void parse_fan_json(const json& j, FanCurveConfig& fan) {
     fan.fixed_speed_pct = j.value("fixed_speed_pct", 50);
     fan.hysteresis_c = j.value("hysteresis_c", 3);
     fan.zero_rpm_enabled = j.value("zero_rpm_enabled", true);
+    fan.temp_source = j.value("temp_source", 0);
 
     if (j.contains("points") && j["points"].is_array()) {
         fan.points.clear();
@@ -293,6 +298,7 @@ static json serialize_fan_json(const FanCurveConfig& fan) {
         {"fixed_speed_pct", fan.fixed_speed_pct},
         {"hysteresis_c", fan.hysteresis_c},
         {"zero_rpm_enabled", fan.zero_rpm_enabled},
+        {"temp_source", fan.temp_source},
         {"points", points_arr}
     };
 }
@@ -366,7 +372,9 @@ bool ConfigManager::load_from_file(const std::wstring& filename) {
         }
 
         hotkeys_.toggle_overlay_key = static_cast<UINT>(j.value("toggle_overlay_key", static_cast<int>(VK_F11)));
+        hotkeys_.toggle_rtss_osd_key = static_cast<UINT>(j.value("toggle_rtss_osd_key", static_cast<int>(VK_F12)));
         hotkeys_.toggle_benchmark_key = static_cast<UINT>(j.value("toggle_benchmark_key", static_cast<int>(VK_F10)));
+        hotkeys_.enable_profile_hotkeys = j.value("enable_profile_hotkeys", true);
     } catch (const json::exception& e) {
         std::cerr << "[AnyPerfomans] Config parse error: " << e.what() << std::endl;
         return false;
@@ -397,7 +405,9 @@ bool ConfigManager::save_to_file(const std::wstring& filename) {
         {"active_profile", active_profile_index_},
         {"profiles", j_profiles},
         {"toggle_overlay_key", static_cast<int>(hotkeys_.toggle_overlay_key)},
-        {"toggle_benchmark_key", static_cast<int>(hotkeys_.toggle_benchmark_key)}
+        {"toggle_rtss_osd_key", static_cast<int>(hotkeys_.toggle_rtss_osd_key)},
+        {"toggle_benchmark_key", static_cast<int>(hotkeys_.toggle_benchmark_key)},
+        {"enable_profile_hotkeys", hotkeys_.enable_profile_hotkeys}
     };
 
     file << j.dump(2) << std::endl;

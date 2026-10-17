@@ -115,6 +115,8 @@ struct HudConfig {
     bool tray_temp_is_gpu = true;
     bool autostart_with_windows = false;
     bool start_minimized_to_tray = false;
+    bool group_gpu_on_one_line = false; // Compact multi-metric OSD line: GPU: 65C | 1750MHz | 99% | 115W
+    bool rtss_osd_visible = true;       // Live toggle for RTSS OSD visibility
 };
 
 // Fan Curve Point
@@ -130,6 +132,7 @@ struct FanCurveConfig {
     int fixed_speed_pct = 50;
     int hysteresis_c = 3;
     bool zero_rpm_enabled = true;
+    int temp_source = 0; // 0 = GPU Core (Edge), 1 = GPU Hotspot (Junction), 2 = VRAM
     std::vector<FanPoint> points = {
         { 30, 0 },
         { 50, 40 },
@@ -169,8 +172,10 @@ struct ProfileConfig {
 };
 
 struct HotkeyConfig {
-    UINT toggle_overlay_key = VK_F11;
-    UINT toggle_benchmark_key = VK_F10;
+    UINT toggle_overlay_key = VK_F11;   // Toggle AnyPerfomans Dashboard window
+    UINT toggle_rtss_osd_key = VK_F12;  // Toggle RTSS In-Game OSD overlay visibility
+    UINT toggle_benchmark_key = VK_F10; // Toggle Benchmark Run
+    bool enable_profile_hotkeys = true; // Ctrl+Shift+1..5
 };
 
 class ConfigManager {
