@@ -1121,11 +1121,11 @@ void DashboardView::render_overclock_tab(
     if (is_amd) {
         ImGui::TextColored(ImVec4(1.0f, 0.25f, 0.25f, 1.0f), "[AMD RADEON RDNA ARCHITECTURE DETECTED]");
         ImGui::SameLine();
-        ImGui::TextDisabled("- Safe Overdrive limits: VRAM [-500..+250 MHz], Undervolt [-150..+50 mV], Power [50..120%%]");
+        ImGui::TextDisabled("%s", "- Safe Overdrive limits: VRAM [-500..+250 MHz], Undervolt [-150..+50 mV], Power [50..120%]");
     } else if (is_nvidia) {
         ImGui::TextColored(ImVec4(0.40f, 0.85f, 0.20f, 1.0f), "[NVIDIA GEFORCE ARCHITECTURE DETECTED]");
         ImGui::SameLine();
-        ImGui::TextDisabled("- NVIDIA NVAPI limits: VRAM [-1000..+2000 MHz], Power [50..130%%]");
+        ImGui::TextDisabled("%s", "- NVIDIA NVAPI limits: VRAM [-1000..+2000 MHz], Power [50..130%]");
     } else {
         ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.85f, 1.0f), "[GENERIC GPU DETECTED]");
     }
@@ -1567,7 +1567,7 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
             ImGui::TableSetColumnIndex(4);
             ImGui::PushID(i * 100 + 5);
             char lbl_buf[64];
-            strcpy_s(lbl_buf, s.label.c_str());
+            strncpy_s(lbl_buf, sizeof(lbl_buf), s.label.c_str(), _TRUNCATE);
             ImGui::SetNextItemWidth(-FLT_MIN);
             if (ImGui::InputText("##Lbl", lbl_buf, sizeof(lbl_buf))) {
                 s.label = lbl_buf;
@@ -1607,16 +1607,16 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
     ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "COMPACT SINGLE-LINE METRIC GROUPING (AFTERBURNER MAX)");
     ImGui::Columns(2, "CompactGroupCols", false);
     ImGui::Checkbox("Compact GPU Line", &hud.group_gpu_on_one_line);
-    ImGui::TextDisabled("GPU : 65 C, Hotspot 78 C, 1750 MHz, 99%, 115 W");
+    ImGui::TextDisabled("%s", "GPU : 65 C, Hotspot 78 C, 1750 MHz, 99%, 115 W");
     ImGui::Checkbox("Compact VRAM Line", &hud.group_vram_on_one_line);
-    ImGui::TextDisabled("VRAM : 4850 / 6144 MB, 72 C, 1750 MHz");
+    ImGui::TextDisabled("%s", "VRAM : 4850 / 6144 MB, 72 C, 1750 MHz");
     ImGui::Checkbox("Compact CPU Line", &hud.group_cpu_on_one_line);
-    ImGui::TextDisabled("CPU : 62 C, 48.5%, 65 W");
+    ImGui::TextDisabled("%s", "CPU : 62 C, 48.5%, 65 W");
     ImGui::NextColumn();
     ImGui::Checkbox("Compact RAM / Pagefile Line", &hud.group_ram_on_one_line);
-    ImGui::TextDisabled("RAM : 14.2 / 31.9 GB, Pagefile 16.5 GB");
+    ImGui::TextDisabled("%s", "RAM : 14.2 / 31.9 GB, Pagefile 16.5 GB");
     ImGui::Checkbox("Compact FPS / Latency Line", &hud.group_fps_on_one_line);
-    ImGui::TextDisabled("FPS : 144 FPS, 6.9 ms (Avg 142, 1% Low 115)");
+    ImGui::TextDisabled("%s", "FPS : 144 FPS, 6.9 ms (Avg 142, 1% Low 115)");
     ImGui::Columns(1);
 
     ImGui::Spacing();
@@ -1626,12 +1626,12 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
     // CPU Per-Core Display Formatting (MSI Afterburner Style)
     ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "CPU CORES LOAD DISPLAY (MSI AFTERBURNER STYLE)");
     ImGui::Checkbox("Display each CPU Core in Column (Отдельно по каждому ядру в столбик)", &hud.cpu_cores_in_column);
-    ImGui::TextDisabled("Shows CPU1: 45%%, CPU2: 60%% on individual vertical rows in RTSS OSD (matching MSI Afterburner).");
+    ImGui::TextDisabled("%s", "Shows CPU1: 45%, CPU2: 60% on individual vertical rows in RTSS OSD (matching MSI Afterburner).");
 
     if (!hud.cpu_cores_in_column) {
         ImGui::Indent(20.0f * fonts.dpi_scale);
         ImGui::Checkbox("Group CPU Cores into 1 Line (Сгруппировать все ядра в одну строку)", &hud.group_cpu_cores_on_one_line);
-        ImGui::TextDisabled("When checked: CPU Cores: 45%% 60%% 25%%... in a single line. When unchecked: wrapped in clean rows.");
+        ImGui::TextDisabled("%s", "When checked: CPU Cores: 45% 60% 25%... in a single line. When unchecked: wrapped in clean rows.");
         if (!hud.group_cpu_cores_on_one_line) {
             ImGui::SetNextItemWidth(180.0f * fonts.dpi_scale);
             const char* wrap_opts[] = { "4 Cores per Row", "6 Cores per Row", "8 Cores per Row", "12 Cores per Row", "16 Cores per Row" };
