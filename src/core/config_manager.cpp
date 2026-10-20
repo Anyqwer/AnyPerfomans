@@ -14,6 +14,7 @@ void ConfigManager::init_default_sensors(std::vector<SensorConfigItem>& sensors)
         { "gpu_temp", "GPU Temp", true, false, "00E5FF" },
         { "gpu_hotspot", "Hotspot", true, false, "FF9100" },
         { "gpu_vram_temp", "VRAM Temp", true, false, "FFB300" },
+        { "gpu_voltage", "GPU Voltage", false, false, "00E5FF" },
         { "gpu_power", "GPU Power", false, false, "00E5FF" },
         { "gpu_vram", "VRAM", true, false, "00E5FF" },
         { "gpu_mem_clock", "Mem Clock", false, false, "00E5FF" },
@@ -325,6 +326,13 @@ static void parse_oc_json(const json& j, OverclockConfig& oc) {
     oc.temp_limit_c = j.value("temp_limit_c", 83);
     oc.voltage_offset_mv = j.value("voltage_offset_mv", 0);
     oc.apply_at_startup = j.value("apply_at_startup", false);
+    oc.custom_vf_enabled = j.value("custom_vf_enabled", false);
+    oc.p1_freq_mhz = j.value("p1_freq_mhz", 800);
+    oc.p1_volt_mv = j.value("p1_volt_mv", 695);
+    oc.p2_freq_mhz = j.value("p2_freq_mhz", 1290);
+    oc.p2_volt_mv = j.value("p2_volt_mv", 776);
+    oc.p3_freq_mhz = j.value("p3_freq_mhz", 1750);
+    oc.p3_volt_mv = j.value("p3_volt_mv", 950);
 
     if (j.contains("vf_curve") && j["vf_curve"].is_array()) {
         oc.vf_curve_points.clear();
@@ -350,6 +358,13 @@ static json serialize_oc_json(const OverclockConfig& oc) {
         {"temp_limit_c", oc.temp_limit_c},
         {"voltage_offset_mv", oc.voltage_offset_mv},
         {"apply_at_startup", oc.apply_at_startup},
+        {"custom_vf_enabled", oc.custom_vf_enabled},
+        {"p1_freq_mhz", oc.p1_freq_mhz},
+        {"p1_volt_mv", oc.p1_volt_mv},
+        {"p2_freq_mhz", oc.p2_freq_mhz},
+        {"p2_volt_mv", oc.p2_volt_mv},
+        {"p3_freq_mhz", oc.p3_freq_mhz},
+        {"p3_volt_mv", oc.p3_volt_mv},
         {"vf_curve", vf_arr}
     };
 }

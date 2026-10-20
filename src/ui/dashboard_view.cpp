@@ -147,6 +147,16 @@ void DashboardView::render(
             break;
     }
 
+    // Ctrl + F Hotkey to toggle V/F Curve Editor (MSI Afterburner style)
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_F, false)) {
+        show_curve_editor_modal_ = !show_curve_editor_modal_;
+    }
+
+    // Render Afterburner-style V/F Curve Editor Modal if active
+    if (show_curve_editor_modal_) {
+        render_vf_curve_editor_modal(hw_ctrl, config_mgr, gpu_mon.get_metrics(), fonts);
+    }
+
     ImGui::End();
 }
 
@@ -918,11 +928,21 @@ void DashboardView::render_tuning_tab(
 
     // Live Hardware Telemetry Banner (Like Afterburner's dials)
     ImGui::BeginChild("LiveHwCard", ImVec2(0, 68.0f * s), true);
-    ImGui::Columns(4, "HwBannerCols", false);
+    ImGui::Columns(5, "HwBannerCols", false);
 
     ImGui::TextColored(ImVec4(0.50f, 0.58f, 0.68f, 1.0f), "GPU CORE");
     ImGui::PushFont(fonts.bold);
     ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "%d MHz", gpu.core_clock_mhz);
+    ImGui::PopFont();
+
+    ImGui::NextColumn();
+    ImGui::TextColored(ImVec4(0.50f, 0.58f, 0.68f, 1.0f), "VOLTAGE");
+    ImGui::PushFont(fonts.bold);
+    if (gpu.voltage_mv > 0) {
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.46f, 1.0f), "%d mV", gpu.voltage_mv);
+    } else {
+        ImGui::TextColored(ImVec4(0.50f, 0.60f, 0.72f, 1.0f), "-- mV");
+    }
     ImGui::PopFont();
 
     ImGui::NextColumn();
@@ -973,10 +993,25 @@ void DashboardView::render_tuning_tab(
     const char* volt_tag = (oc_cfg.voltage_offset_mv < 0) ? "[UNDERVOLT]" : (oc_cfg.voltage_offset_mv > 0 ? "[OVERVOLT]" : "[STOCK]");
     if (is_amd && hw_ctrl.has_amd_od8()) {
         int target_volt = std::clamp(hw_ctrl.get_amd_def_volt_mv() + oc_cfg.voltage_offset_mv, hw_ctrl.get_amd_min_volt_mv(), hw_ctrl.get_amd_max_volt_mv());
-        ImGui::Text("CORE VOLTAGE: %+d mV (Stock: %d mV -> Target: %d mV) %s", oc_cfg.voltage_offset_mv, hw_ctrl.get_amd_def_volt_mv(), target_volt, volt_tag);
+        if (gpu.voltage_mv > 0) {
+            ImGui::Text("CORE VOLTAGE: %+d mV (Live: %d mV | Stock: %d mV -> Target: %d mV) %s", oc_cfg.voltage_offset_mv, gpu.voltage_mv, hw_ctrl.get_amd_def_volt_mv(), target_volt, volt_tag);
+        } else {
+            ImGui::Text("CORE VOLTAGE: %+d mV (Stock: %d mV -> Target: %d mV) %s", oc_cfg.voltage_offset_mv, hw_ctrl.get_amd_def_volt_mv(), target_volt, volt_tag);
+        }
     } else {
-        ImGui::Text("CORE VOLTAGE: %+d mV %s", oc_cfg.voltage_offset_mv, volt_tag);
+        if (gpu.voltage_mv > 0) {
+            ImGui::Text("CORE VOLTAGE: %+d mV (Live: %d mV) %s", oc_cfg.voltage_offset_mv, gpu.voltage_mv, volt_tag);
+        } else {
+            ImGui::Text("CORE VOLTAGE: %+d mV %s", oc_cfg.voltage_offset_mv, volt_tag);
+        }
     }
+    ImGui::SameLine(ImGui::GetContentRegionAvail().x - 175.0f * s);
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.45f, 0.65f, 0.90f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.65f, 0.85f, 1.0f));
+    if (ImGui::SmallButton("[ CURVE EDITOR (Ctrl+F) ]")) {
+        show_curve_editor_modal_ = true;
+    }
+    ImGui::PopStyleColor(2);
     ImGui::SliderInt("##CoreVoltage", &oc_cfg.voltage_offset_mv, min_volt, max_volt, "%+d mV");
 
     ImGui::Spacing();
@@ -992,7 +1027,7 @@ void DashboardView::render_tuning_tab(
     if (show_vf_curve_) {
         ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.50f, 0.68f, 0.95f));
     }
-    if (ImGui::SmallButton("[ V/F CURVE ]")) {
+    if (ImGui::SmallButton("[ INLINE CURVE ]")) {
         show_vf_curve_ = !show_vf_curve_;
     }
     if (show_vf_curve_) {
@@ -1197,21 +1232,40 @@ void DashboardView::render_tuning_tab(
     // V/F Curve Interactive Editor
     if (show_vf_curve_) {
         ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "VOLTAGE-FREQUENCY (V/F) CURVE:");
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 140.0f * s);
+        if (ImGui::SmallButton("[ EXPAND (Ctrl+F) ]")) {
+            show_curve_editor_modal_ = true;
+        }
+
         if (ImPlot::BeginPlot("##VfCurvePlot", ImVec2(-1, 180.0f * s), ImPlotFlags_NoTitle | ImPlotFlags_NoBoxSelect)) {
             if (is_amd && hw_ctrl.has_amd_od8()) {
                 ImPlot::SetupAxes("Voltage (mV)", "Core Clock (MHz)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
                 ImPlot::SetupAxesLimits(650.0, 1100.0, 700.0, 1900.0, ImPlotCond_Always);
 
-                double target_core = std::clamp(hw_ctrl.get_amd_def_core_mhz() + oc_cfg.core_clock_offset_mhz, hw_ctrl.get_amd_min_core_mhz(), hw_ctrl.get_amd_max_core_mhz());
-                double target_volt = std::clamp(hw_ctrl.get_amd_def_volt_mv() + oc_cfg.voltage_offset_mv, hw_ctrl.get_amd_min_volt_mv(), hw_ctrl.get_amd_max_volt_mv());
+                double p1_f = oc_cfg.custom_vf_enabled ? oc_cfg.p1_freq_mhz : hw_ctrl.get_amd_p1_freq_mhz();
+                double p1_v = oc_cfg.custom_vf_enabled ? oc_cfg.p1_volt_mv : hw_ctrl.get_amd_p1_volt_mv();
+                double p2_f = oc_cfg.custom_vf_enabled ? oc_cfg.p2_freq_mhz : hw_ctrl.get_amd_p2_freq_mhz();
+                double p2_v = oc_cfg.custom_vf_enabled ? oc_cfg.p2_volt_mv : hw_ctrl.get_amd_p2_volt_mv();
+                double target_core = oc_cfg.custom_vf_enabled ? oc_cfg.p3_freq_mhz : std::clamp(hw_ctrl.get_amd_def_core_mhz() + oc_cfg.core_clock_offset_mhz, hw_ctrl.get_amd_min_core_mhz(), hw_ctrl.get_amd_max_core_mhz());
+                double target_volt = oc_cfg.custom_vf_enabled ? oc_cfg.p3_volt_mv : std::clamp(hw_ctrl.get_amd_def_volt_mv() + oc_cfg.voltage_offset_mv, hw_ctrl.get_amd_min_volt_mv(), hw_ctrl.get_amd_max_volt_mv());
 
-                std::vector<double> v_xs = { 695.0, 776.0, target_volt };
-                std::vector<double> v_ys = { 800.0, 1290.0, target_core };
+                std::vector<double> v_xs = { p1_v, p2_v, target_volt, 1100.0 };
+                std::vector<double> v_ys = { p1_f, p2_f, target_core, target_core };
 
                 ImPlot::SetNextLineStyle(ImVec4(0.00f, 0.90f, 0.46f, 1.0f), 2.5f);
                 ImPlot::PlotLine("V/F Curve", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
                 ImPlot::SetNextMarkerStyle(ImPlotMarker_Square, 6.0f, ImVec4(0.00f, 0.90f, 1.00f, 1.0f), 1.5f, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
-                ImPlot::PlotScatter("P-States (P1, P2, P3)", v_xs.data(), v_ys.data(), static_cast<int>(v_xs.size()));
+                ImPlot::PlotScatter("P-States (P1, P2, P3)", v_xs.data(), v_ys.data(), 3);
+
+                // Real-time live operating point
+                if (gpu.voltage_mv >= 650 && gpu.voltage_mv <= 1150 && gpu.core_clock_mhz > 0) {
+                    double cur_v = static_cast<double>(gpu.voltage_mv);
+                    double cur_f = static_cast<double>(gpu.core_clock_mhz);
+                    double pt_x[1] = { cur_v };
+                    double pt_y[1] = { cur_f };
+                    ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle, 7.0f, ImVec4(1.00f, 0.25f, 0.25f, 1.0f), 2.0f, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    ImPlot::PlotScatter("Live GPU State", pt_x, pt_y, 1);
+                }
             } else {
                 ImPlot::SetupAxes("Voltage (mV)", "Offset (MHz)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
                 ImPlot::SetupAxesLimits(650.0, 1150.0, -150.0, 300.0, ImPlotCond_Always);
@@ -1668,6 +1722,226 @@ void DashboardView::render_osd_sensors_tab(ConfigManager& config_mgr, RTSSBridge
     ImGui::EndChild(); // RightOsdStack
 }
 
+void DashboardView::render_vf_curve_editor_modal(
+    HardwareController& hw_ctrl,
+    ConfigManager& config_mgr,
+    const GpuMetrics& gpu,
+    const AppFonts& fonts
+) {
+    if (!show_curve_editor_modal_) return;
+
+    float s = fonts.dpi_scale;
+    ImGui::SetNextWindowSize(ImVec2(880.0f * s, 620.0f * s), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSizeConstraints(ImVec2(680.0f * s, 460.0f * s), ImVec2(1920.0f * s, 1080.0f * s));
+
+    bool open = show_curve_editor_modal_;
+    ImGuiWindowFlags flags = ImGuiWindowFlags_NoCollapse;
+    if (ImGui::Begin("Voltage / Frequency Curve Editor (MSI Afterburner Style) [Ctrl+F]##VfModal", &open, flags)) {
+        auto& oc = config_mgr.get_oc();
+        bool is_amd = hw_ctrl.is_amd() || gpu.is_amd || 
+                      (gpu.adapter_name.find(L"Radeon") != std::wstring::npos) || 
+                      (gpu.adapter_name.find(L"AMD") != std::wstring::npos);
+
+        // Header Banner with GPU and Live Telemetry
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "GPU HARDWARE V/F CURVE CALIBRATION (AFTERBURNER ARCHITECTURE)");
+        ImGui::SameLine(ImGui::GetContentRegionAvail().x - 240.0f * s);
+        if (gpu.voltage_mv > 0 && gpu.core_clock_mhz > 0) {
+            ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.46f, 1.0f), "LIVE: %d MHz @ %d mV", gpu.core_clock_mhz, gpu.voltage_mv);
+        } else if (gpu.core_clock_mhz > 0) {
+            ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.46f, 1.0f), "LIVE: %d MHz", gpu.core_clock_mhz);
+        }
+
+        ImGui::TextDisabled("Interactive Voltage-Frequency curve editor. Drag control points (P1, P2, P3) directly on the plot or use precision inputs below.");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Safe bounds
+        int min_v = (is_amd && hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_min_volt_mv() : 700;
+        int max_v = (is_amd && hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_max_volt_mv() : 1150;
+        int min_c = (is_amd && hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_min_core_mhz() : 800;
+        int max_c = (is_amd && hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_max_core_mhz() : 2000;
+
+        // Initialize points if first time or 0
+        if (oc.p1_freq_mhz <= 0 || oc.p3_freq_mhz <= 0) {
+            oc.p1_freq_mhz = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_p1_freq_mhz() : 800;
+            oc.p1_volt_mv  = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_p1_volt_mv() : 700;
+            oc.p2_freq_mhz = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_p2_freq_mhz() : 1290;
+            oc.p2_volt_mv  = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_p2_volt_mv() : 776;
+            oc.p3_freq_mhz = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_def_core_mhz() : 1750;
+            oc.p3_volt_mv  = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_def_volt_mv() : 950;
+        }
+
+        // Main ImPlot
+        float plot_h = ImGui::GetContentRegionAvail().y - 150.0f * s;
+        if (plot_h < 220.0f * s) plot_h = 220.0f * s;
+
+        if (ImPlot::BeginPlot("##VfCurveInteractivePlot", ImVec2(-1, plot_h), ImPlotFlags_NoTitle)) {
+            ImPlot::SetupAxes("Core Voltage (mV)", "Core Clock (MHz)", ImPlotAxisFlags_None, ImPlotAxisFlags_None);
+            ImPlot::SetupAxesLimits(min_v - 60.0, max_v + 60.0, min_c - 120.0, max_c + 120.0, ImPlotCond_Always);
+
+            // Drag Points for P1, P2, P3
+            double p1_x = static_cast<double>(oc.p1_volt_mv);
+            double p1_y = static_cast<double>(oc.p1_freq_mhz);
+            double p2_x = static_cast<double>(oc.p2_volt_mv);
+            double p2_y = static_cast<double>(oc.p2_freq_mhz);
+            double p3_x = static_cast<double>(oc.p3_volt_mv);
+            double p3_y = static_cast<double>(oc.p3_freq_mhz);
+
+            if (ImPlot::DragPoint(1, &p1_x, &p1_y, ImVec4(0.00f, 0.90f, 1.00f, 1.0f), 7.0f)) {
+                oc.p1_volt_mv = std::clamp(static_cast<int>(std::round(p1_x)), min_v, oc.p2_volt_mv - 10);
+                oc.p1_freq_mhz = std::clamp(static_cast<int>(std::round(p1_y)), min_c, oc.p2_freq_mhz - 50);
+                oc.custom_vf_enabled = true;
+            }
+            if (ImPlot::DragPoint(2, &p2_x, &p2_y, ImVec4(0.00f, 0.90f, 1.00f, 1.0f), 7.0f)) {
+                oc.p2_volt_mv = std::clamp(static_cast<int>(std::round(p2_x)), oc.p1_volt_mv + 10, oc.p3_volt_mv - 10);
+                oc.p2_freq_mhz = std::clamp(static_cast<int>(std::round(p2_y)), oc.p1_freq_mhz + 50, oc.p3_freq_mhz - 50);
+                oc.custom_vf_enabled = true;
+            }
+            if (ImPlot::DragPoint(3, &p3_x, &p3_y, ImVec4(0.00f, 0.90f, 0.46f, 1.0f), 8.0f)) {
+                oc.p3_volt_mv = std::clamp(static_cast<int>(std::round(p3_x)), oc.p2_volt_mv + 10, max_v);
+                oc.p3_freq_mhz = std::clamp(static_cast<int>(std::round(p3_y)), oc.p2_freq_mhz + 50, max_c);
+                oc.custom_vf_enabled = true;
+            }
+
+            // Generate full smooth spline through P1 -> P2 -> P3 -> flatline
+            std::vector<double> xs, ys;
+            for (int i = 0; i <= 80; ++i) {
+                double v = (min_v - 40.0) + ((max_v + 40.0) - (min_v - 40.0)) * (static_cast<double>(i) / 80.0);
+                double freq = 0.0;
+                if (v <= oc.p1_volt_mv) {
+                    freq = oc.p1_freq_mhz;
+                } else if (v <= oc.p2_volt_mv) {
+                    double t = (v - oc.p1_volt_mv) / (oc.p2_volt_mv - oc.p1_volt_mv);
+                    freq = oc.p1_freq_mhz + t * (oc.p2_freq_mhz - oc.p1_freq_mhz);
+                } else if (v <= oc.p3_volt_mv) {
+                    double t = (v - oc.p2_volt_mv) / (oc.p3_volt_mv - oc.p2_volt_mv);
+                    freq = oc.p2_freq_mhz + t * (oc.p3_freq_mhz - oc.p2_freq_mhz);
+                } else {
+                    freq = oc.p3_freq_mhz; // Flattened past P3 (Afterburner style!)
+                }
+                xs.push_back(v);
+                ys.push_back(freq);
+            }
+
+            // Draw line
+            ImPlot::SetNextLineStyle(ImVec4(0.00f, 0.90f, 0.46f, 1.0f), 2.5f);
+            ImPlot::PlotLine("V/F Curve", xs.data(), ys.data(), static_cast<int>(xs.size()));
+
+            // Draw P-State markers
+            double p_xs[4] = { static_cast<double>(oc.p1_volt_mv), static_cast<double>(oc.p2_volt_mv), static_cast<double>(oc.p3_volt_mv), static_cast<double>(max_v + 30) };
+            double p_ys[4] = { static_cast<double>(oc.p1_freq_mhz), static_cast<double>(oc.p2_freq_mhz), static_cast<double>(oc.p3_freq_mhz), static_cast<double>(oc.p3_freq_mhz) };
+            ImPlot::SetNextMarkerStyle(ImPlotMarker_Square, 7.0f, ImVec4(0.00f, 0.90f, 1.00f, 1.0f), 1.5f, ImVec4(0.0f, 0.0f, 0.0f, 1.0f));
+            ImPlot::PlotScatter("Nodes (P1, P2, P3, Cap)", p_xs, p_ys, 4);
+
+            // Real-Time Live Operating Point Crosshair & Indicator
+            if (gpu.voltage_mv >= (min_v - 40) && gpu.voltage_mv <= (max_v + 60) && gpu.core_clock_mhz > 0) {
+                double cur_v = static_cast<double>(gpu.voltage_mv);
+                double cur_f = static_cast<double>(gpu.core_clock_mhz);
+                double pt_x[1] = { cur_v };
+                double pt_y[1] = { cur_f };
+                // Vertical live crosshair line
+                double vl_x[2] = { cur_v, cur_v };
+                double vl_y[2] = { static_cast<double>(min_c - 120), static_cast<double>(max_c + 120) };
+                ImPlot::SetNextLineStyle(ImVec4(1.00f, 0.20f, 0.20f, 0.80f), 1.5f);
+                ImPlot::PlotLine("##LiveVLine", vl_x, vl_y, 2);
+
+                // Horizontal live crosshair line
+                double hl_x[2] = { static_cast<double>(min_v - 60), static_cast<double>(max_v + 60) };
+                double hl_y[2] = { cur_f, cur_f };
+                ImPlot::SetNextLineStyle(ImVec4(1.00f, 0.20f, 0.20f, 0.50f), 1.0f);
+                ImPlot::PlotLine("##LiveHLine", hl_x, hl_y, 2);
+
+                // Live glowing point
+                ImPlot::SetNextMarkerStyle(ImPlotMarker_Circle, 8.0f, ImVec4(1.00f, 0.25f, 0.25f, 1.0f), 2.0f, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                ImPlot::PlotScatter("Live GPU State", pt_x, pt_y, 1);
+            }
+
+            ImPlot::EndPlot();
+        }
+
+        // Digital Fine-tuning Controls (P1, P2, P3)
+        ImGui::Columns(3, "PStateCols", false);
+
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "P1 (Low State):");
+        ImGui::SetNextItemWidth(90.0f * s);
+        if (ImGui::InputInt("mV##P1V", &oc.p1_volt_mv, 5)) { oc.custom_vf_enabled = true; }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.0f * s);
+        if (ImGui::InputInt("MHz##P1F", &oc.p1_freq_mhz, 10)) { oc.custom_vf_enabled = true; }
+
+        ImGui::NextColumn();
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "P2 (Mid State):");
+        ImGui::SetNextItemWidth(90.0f * s);
+        if (ImGui::InputInt("mV##P2V", &oc.p2_volt_mv, 5)) { oc.custom_vf_enabled = true; }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.0f * s);
+        if (ImGui::InputInt("MHz##P2F", &oc.p2_freq_mhz, 10)) { oc.custom_vf_enabled = true; }
+
+        ImGui::NextColumn();
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.46f, 1.0f), "P3 (Peak State / Undervolt):");
+        ImGui::SetNextItemWidth(90.0f * s);
+        if (ImGui::InputInt("mV##P3V", &oc.p3_volt_mv, 5)) { oc.custom_vf_enabled = true; }
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(90.0f * s);
+        if (ImGui::InputInt("MHz##P3F", &oc.p3_freq_mhz, 10)) { oc.custom_vf_enabled = true; }
+
+        ImGui::Columns(1);
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Presets & Action Buttons
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.18f, 0.25f, 0.90f));
+        if (ImGui::Button("Sweet Spot: 1750 MHz @ 940 mV (Navi 10)")) {
+            oc.p1_freq_mhz = 800; oc.p1_volt_mv = 700;
+            oc.p2_freq_mhz = 1300; oc.p2_volt_mv = 780;
+            oc.p3_freq_mhz = 1750; oc.p3_volt_mv = 940;
+            oc.custom_vf_enabled = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cool & Quiet: 1700 MHz @ 900 mV")) {
+            oc.p1_freq_mhz = 800; oc.p1_volt_mv = 700;
+            oc.p2_freq_mhz = 1250; oc.p2_volt_mv = 760;
+            oc.p3_freq_mhz = 1700; oc.p3_volt_mv = 900;
+            oc.custom_vf_enabled = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset to VBIOS Curve")) {
+            oc.p1_freq_mhz = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_p1_freq_mhz() : 800;
+            oc.p1_volt_mv  = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_p1_volt_mv() : 700;
+            oc.p2_freq_mhz = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_p2_freq_mhz() : 1290;
+            oc.p2_volt_mv  = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_p2_volt_mv() : 776;
+            oc.p3_freq_mhz = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_def_core_mhz() : 1750;
+            oc.p3_volt_mv  = (hw_ctrl.has_amd_od8()) ? hw_ctrl.get_amd_def_volt_mv() : 1008;
+            oc.custom_vf_enabled = false;
+        }
+        ImGui::PopStyleColor();
+
+        float avail = ImGui::GetContentRegionAvail().x;
+        if (avail > 250.0f * s) {
+            ImGui::SameLine(ImGui::GetWindowWidth() - 260.0f * s);
+        }
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.50f, 0.70f, 0.95f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.70f, 0.90f, 1.0f));
+        ImGui::PushFont(fonts.bold);
+        if (ImGui::Button("[ APPLY TO GPU ]", ImVec2(140.0f * s, 32.0f * s))) {
+            oc.enabled = true;
+            hw_ctrl.apply_overclock(oc);
+            config_mgr.save_to_file();
+        }
+        ImGui::PopFont();
+        ImGui::PopStyleColor(2);
+
+        ImGui::SameLine();
+        if (ImGui::Button("Close", ImVec2(90.0f * s, 32.0f * s))) {
+            open = false;
+        }
+    }
+    ImGui::End();
+
+    show_curve_editor_modal_ = open;
+}
+
 void DashboardView::render_rtss_mini_hud(
     const ProcessMonitor& proc_mon,
     const EtwTracker& etw_tracker,
@@ -1789,6 +2063,7 @@ void DashboardView::render_rtss_mini_hud(
         if (hud.show_gpu_hotspot && gpu.hotspot_temp_c > 0) gpu_ss << "| Hot: " << gpu.hotspot_temp_c << "C ";
         if (hud.show_gpu_vram_temp && gpu.vram_temp_c > 0) gpu_ss << "| Mem: " << gpu.vram_temp_c << "C ";
         if (hud.show_gpu_clock && gpu.core_clock_mhz > 0) gpu_ss << "| " << gpu.core_clock_mhz << " MHz ";
+        if (gpu.voltage_mv > 0) gpu_ss << "| " << gpu.voltage_mv << " mV ";
         if (hud.show_gpu_power && gpu.power_watts > 0) gpu_ss << "| " << gpu.power_watts << "W ";
         if (hud.show_gpu_vram) {
             float vram_used_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);

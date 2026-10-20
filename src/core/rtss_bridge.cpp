@@ -672,6 +672,9 @@ bool RTSSBridge::update_osd(
         }
         if (prev) ss << ", ";
         ss << gpu.core_usage_percent << "%";
+        if (gpu.voltage_mv > 0) {
+            ss << ", " << gpu.voltage_mv << " mV";
+        }
         if (gpu.power_watts > 0) {
             ss << ", " << gpu.power_watts << " W";
         }
@@ -773,7 +776,7 @@ bool RTSSBridge::update_osd(
             if (!s.enabled) continue;
 
             // Compact Single-Line GPU Grouping
-            if (hud.group_gpu_on_one_line && (s.id == "gpu_usage" || s.id == "gpu_clock" || s.id == "gpu_temp" || s.id == "gpu_hotspot" || s.id == "gpu_power")) {
+            if (hud.group_gpu_on_one_line && (s.id == "gpu_usage" || s.id == "gpu_clock" || s.id == "gpu_temp" || s.id == "gpu_hotspot" || s.id == "gpu_power" || s.id == "gpu_voltage")) {
                 render_compact_gpu();
                 continue;
             }
@@ -852,6 +855,10 @@ bool RTSSBridge::update_osd(
             } else if (s.id == "gpu_power") {
                 if (gpu.power_watts > 0) {
                     ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << gpu.power_watts << " W<C>\n";
+                }
+            } else if (s.id == "gpu_voltage") {
+                if (gpu.voltage_mv > 0) {
+                    ss << "<C=" << col << ">" << s.label << " : <C><C=" << col_val << ">" << gpu.voltage_mv << " mV<C>\n";
                 }
             } else if (s.id == "gpu_vram") {
                 float vram_used_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);

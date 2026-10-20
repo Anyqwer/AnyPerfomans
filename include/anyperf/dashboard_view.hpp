@@ -90,6 +90,12 @@ private:
         RTSSBridge& rtss_bridge,
         const AppFonts& fonts
     );
+    void render_vf_curve_editor_modal(
+        HardwareController& hw_ctrl,
+        ConfigManager& config_mgr,
+        const GpuMetrics& gpu,
+        const AppFonts& fonts
+    );
     void render_rtss_mini_hud(
         const ProcessMonitor& proc_mon,
         const EtwTracker& etw_tracker,
@@ -116,6 +122,7 @@ private:
     int active_tab_index_ = 0; // 0 = Tuning & OC, 1 = Telemetry & Threads, 2 = OSD & Sensors
     bool show_vf_curve_ = true;
     bool show_fan_curve_ = false;
+    bool show_curve_editor_modal_ = false; // MSI Afterburner-style standalone V/F Curve Window
 
     // A/B Benchmark state
     bool is_benchmarking_ = false;

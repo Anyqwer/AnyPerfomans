@@ -346,8 +346,11 @@ void GpuMonitor::update_adl() {
             if (pmLog.sensors[8].supported && pmLog.sensors[8].value > 0) {
                 metrics_.temperature_c = pmLog.sensors[8].value;
             }
-            // Sensor 9: Junction / Hotspot Temperature (C)
-            if (pmLog.sensors[9].supported && pmLog.sensors[9].value > 0) {
+            // Sensor 27 / 9: Junction / Hotspot Temperature (C)
+            if (pmLog.sensors[27].supported && pmLog.sensors[27].value > 0) {
+                metrics_.hotspot_temp_c = pmLog.sensors[27].value;
+                has_hw_hotspot_ = true;
+            } else if (pmLog.sensors[9].supported && pmLog.sensors[9].value > 0) {
                 metrics_.hotspot_temp_c = pmLog.sensors[9].value;
                 has_hw_hotspot_ = true;
             }
@@ -362,6 +365,10 @@ void GpuMonitor::update_adl() {
             // Sensor 20: Memory Controller Load (%)
             if (pmLog.sensors[20].supported) {
                 metrics_.memory_controller_percent = pmLog.sensors[20].value;
+            }
+            // Sensor 21: GFX Core Voltage (mV) - Official AMD ADL_PMLOG_GFX_VOLTAGE
+            if (pmLog.sensors[21].supported && pmLog.sensors[21].value > 0) {
+                metrics_.voltage_mv = pmLog.sensors[21].value;
             }
             // Sensor 23: Board / ASIC Power (Watts)
             if (pmLog.sensors[23].supported && pmLog.sensors[23].value > 0) {

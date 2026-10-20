@@ -167,6 +167,14 @@ struct OverclockConfig {
     int temp_limit_c = 83;             // 65 .. 90 °C
     int voltage_offset_mv = 0;         // 0 .. 100 mV
     bool apply_at_startup = false;     // Apply OC and Fan profile on Windows startup
+    bool custom_vf_enabled = false;    // Enables explicit Afterburner-style V/F curve points
+    // AMD 3-Point V/F Curve (P1, P2, P3 States for Overdrive 8 / Navi / RDNA)
+    int p1_freq_mhz = 800;
+    int p1_volt_mv = 695;
+    int p2_freq_mhz = 1290;
+    int p2_volt_mv = 776;
+    int p3_freq_mhz = 1750;
+    int p3_volt_mv = 950;
     std::vector<VfPoint> vf_curve_points = {
         { 700, 0 }, { 750, 0 }, { 800, 0 }, { 850, 0 },
         { 900, 0 }, { 950, 0 }, { 1000, 0 }, { 1050, 0 }, { 1100, 0 }

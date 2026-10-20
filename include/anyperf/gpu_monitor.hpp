@@ -29,9 +29,10 @@ struct GpuMetrics {
     size_t vram_used_bytes = 0;        // Live VRAM in use (bytes)
     size_t vram_total_bytes = 0;       // Physical Dedicated VRAM (bytes)
 
-    // Clocks & Power
+    // Clocks, Voltage & Power
     int core_clock_mhz = 0;
     int memory_clock_mhz = 0;
+    int voltage_mv = 0;                // Live Core Voltage in millivolts (e.g. 875 mV)
     int power_watts = 0;
 
     // Fan Telemetry

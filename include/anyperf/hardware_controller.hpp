@@ -62,6 +62,10 @@ public:
     int get_amd_def_volt_mv() const { return adl_od8_def_volt_mv_; }
     int get_amd_min_volt_mv() const { return adl_od8_min_volt_mv_; }
     int get_amd_max_volt_mv() const { return adl_od8_max_volt_mv_; }
+    int get_amd_p1_freq_mhz() const { return adl_od8_p1_freq_mhz_; }
+    int get_amd_p1_volt_mv() const { return adl_od8_p1_volt_mv_; }
+    int get_amd_p2_freq_mhz() const { return adl_od8_p2_freq_mhz_; }
+    int get_amd_p2_volt_mv() const { return adl_od8_p2_volt_mv_; }
     int get_amd_max_power_pct() const { return adl_od8_max_power_pct_; }
 
 private:

@@ -675,9 +675,15 @@ bool HardwareController::apply_overclock(const OverclockConfig& oc) {
                     set_req.od8SettingTable[i].reset = 0;
                 }
 
-                // Compute target frequencies & voltage based on factory defaults + user offset
-                int target_core = std::clamp(adl_od8_def_core_mhz_ + oc.core_clock_offset_mhz, adl_od8_min_core_mhz_, adl_od8_max_core_mhz_);
-                int target_volt = std::clamp(adl_od8_def_volt_mv_ + oc.voltage_offset_mv, adl_od8_min_volt_mv_, adl_od8_max_volt_mv_);
+                // Compute target frequencies & voltage based on factory defaults + user offset or custom curve
+                int p1_f = oc.custom_vf_enabled ? std::clamp(oc.p1_freq_mhz, adl_od8_min_core_mhz_, adl_od8_max_core_mhz_) : adl_od8_p1_freq_mhz_;
+                int p1_v = oc.custom_vf_enabled ? std::clamp(oc.p1_volt_mv, adl_od8_min_volt_mv_, adl_od8_max_volt_mv_) : adl_od8_p1_volt_mv_;
+                int p2_f = oc.custom_vf_enabled ? std::clamp(oc.p2_freq_mhz, adl_od8_min_core_mhz_, adl_od8_max_core_mhz_) : adl_od8_p2_freq_mhz_;
+                int p2_v = oc.custom_vf_enabled ? std::clamp(oc.p2_volt_mv, adl_od8_min_volt_mv_, adl_od8_max_volt_mv_) : adl_od8_p2_volt_mv_;
+                int target_core = oc.custom_vf_enabled ? std::clamp(oc.p3_freq_mhz, adl_od8_min_core_mhz_, adl_od8_max_core_mhz_)
+                                                       : std::clamp(adl_od8_def_core_mhz_ + oc.core_clock_offset_mhz, adl_od8_min_core_mhz_, adl_od8_max_core_mhz_);
+                int target_volt = oc.custom_vf_enabled ? std::clamp(oc.p3_volt_mv, adl_od8_min_volt_mv_, adl_od8_max_volt_mv_)
+                                                       : std::clamp(adl_od8_def_volt_mv_ + oc.voltage_offset_mv, adl_od8_min_volt_mv_, adl_od8_max_volt_mv_);
                 int target_mem = std::clamp(adl_od8_def_mem_mhz_ + oc.memory_clock_offset_mhz, adl_od8_min_mem_mhz_, adl_od8_max_mem_mhz_);
                 int power_offset = std::clamp(oc.power_limit_pct - 100, adl_od8_min_power_pct_, adl_od8_max_power_pct_);
 
@@ -691,10 +697,10 @@ bool HardwareController::apply_overclock(const OverclockConfig& oc) {
                 for (int i = 2; i <= 7; ++i) {
                     set_req.od8SettingTable[i].requested = 1;
                 }
-                set_req.od8SettingTable[2].value = adl_od8_p1_freq_mhz_;
-                set_req.od8SettingTable[3].value = adl_od8_p1_volt_mv_;
-                set_req.od8SettingTable[4].value = adl_od8_p2_freq_mhz_;
-                set_req.od8SettingTable[5].value = adl_od8_p2_volt_mv_;
+                set_req.od8SettingTable[2].value = p1_f;
+                set_req.od8SettingTable[3].value = p1_v;
+                set_req.od8SettingTable[4].value = p2_f;
+                set_req.od8SettingTable[5].value = p2_v;
                 set_req.od8SettingTable[6].value = target_core;
                 set_req.od8SettingTable[7].value = target_volt;
 
