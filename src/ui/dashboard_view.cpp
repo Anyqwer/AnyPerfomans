@@ -165,90 +165,99 @@ void DashboardView::render_header_bar(
 ) {
     float s = fonts.dpi_scale;
 
-    // Liquid Glass Edition Branding
+    // High-Tech HUD Branding (ui-ux-pro-max-skill)
     ImGui::PushFont(fonts.title);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 1.00f, 1.00f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.96f, 0.98f, 1.00f, 1.0f));
     ImGui::Text("ANYPERFOMANS");
     ImGui::PopStyleColor();
     ImGui::PopFont();
 
-    ImGui::SameLine();
-    ImGui::PushFont(fonts.bold);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.90f, 1.00f, 1.0f));
-    ImGui::Text("LIQUID GLASS");
-    ImGui::PopStyleColor();
-    ImGui::PopFont();
+    ImGui::SameLine(0, 8.0f * s);
 
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.50f, 0.55f, 0.65f, 0.9f), "| Hardware & Telemetry Suite");
+    // Glowing Sci-Fi Badge
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.40f, 0.55f, 0.35f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.50f, 0.65f, 0.50f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.90f, 1.00f, 1.0f));
+    ImGui::PushFont(fonts.bold);
+    ImGui::SmallButton("HUD PRO MAX");
+    ImGui::PopFont();
+    ImGui::PopStyleColor(3);
+
+    ImGui::SameLine(0, 10.0f * s);
+    ImGui::TextColored(ImVec4(0.45f, 0.52f, 0.62f, 0.9f), "| Real-Time Hardware & Present Telemetry");
 
     // Right-aligned status badges
-    float badges_width = 460.0f * s;
+    float badges_width = 490.0f * s;
     float start_x = ImGui::GetWindowWidth() - badges_width;
     if (start_x < 420.0f * s) start_x = 420.0f * s;
     ImGui::SameLine(start_x);
 
-    // ETW Status Badge
+    // ETW Engine Status Badge
     if (etw_tracker.is_active()) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.35f, 0.18f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.20f, 1.00f, 0.50f, 1.0f));
-        ImGui::Button("[ETW KERNEL: ACTIVE]");
-        ImGui::PopStyleColor(2);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.04f, 0.18f, 0.12f, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.06f, 0.24f, 0.16f, 0.95f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.92f, 0.48f, 1.0f));
+        ImGui::Button("[ ETW KERNEL PRO ]");
+        ImGui::PopStyleColor(3);
     } else if (etw_tracker.get_state() == EtwState::AccessDenied) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.40f, 0.20f, 0.05f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.60f, 0.20f, 1.0f));
-        if (ImGui::Button("[! RUN AS ADMIN]")) {
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.35f, 0.16f, 0.04f, 0.90f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.55f, 0.25f, 0.06f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.70f, 0.15f, 1.0f));
+        if (ImGui::Button("[ ! ELEVATE ADMIN ]")) {
             EtwTracker::relaunch_as_admin();
         }
-        ImGui::PopStyleColor(2);
+        ImGui::PopStyleColor(3);
     } else {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.14f, 0.18f, 0.70f));
-        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.58f, 0.65f, 1.0f));
-        ImGui::Button("[ETW: STANDBY]");
-        ImGui::PopStyleColor(2);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.09f, 0.12f, 0.17f, 0.75f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.12f, 0.16f, 0.22f, 0.85f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.50f, 0.56f, 0.65f, 1.0f));
+        ImGui::Button("[ ETW STANDBY ]");
+        ImGui::PopStyleColor(3);
     }
 
-    ImGui::SameLine();
+    ImGui::SameLine(0, 6.0f * s);
 
-    // GPU Status Badge
+    // GPU Hardware Architecture Badge
     const auto& gpu_metrics = gpu_mon.get_metrics();
     std::string gpu_short_name = wide_to_utf8(gpu_metrics.adapter_name);
-    if (gpu_short_name.length() > 20) {
-        gpu_short_name = gpu_short_name.substr(0, 18) + "..";
+    if (gpu_short_name.length() > 18) {
+        gpu_short_name = gpu_short_name.substr(0, 16) + "..";
     }
-    std::string gpu_badge = "[" + gpu_short_name + "]";
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.18f, 0.22f, 0.85f));
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.88f, 0.95f, 1.0f));
+    std::string gpu_badge = "[ " + gpu_short_name + " ]";
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.06f, 0.12f, 0.18f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.08f, 0.18f, 0.26f, 0.95f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.88f, 1.00f, 1.0f));
     ImGui::Button(gpu_badge.c_str());
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor(3);
 
-    ImGui::SameLine();
+    ImGui::SameLine(0, 6.0f * s);
 
-    // Mini HUD Button (GPU-Z Close/Lookup Red Button Style)
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f, 0.12f, 0.18f, 0.90f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.95f, 0.18f, 0.25f, 1.0f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.55f, 0.08f, 0.12f, 1.0f));
-    if (ImGui::Button("[MINI HUD F11]", ImVec2(120.0f * s, 26.0f * s))) {
+    // Mini HUD Button (HUD Glass Pill)
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.42f, 0.58f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.65f, 0.85f, 1.00f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.00f, 0.85f, 1.00f, 1.00f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 1.00f, 1.00f, 1.00f));
+    if (ImGui::Button("[ MINI HUD F11 ]", ImVec2(125.0f * s, 26.0f * s))) {
         current_mode = OverlayMode::MiniHud;
     }
-    ImGui::PopStyleColor(3);
+    ImGui::PopStyleColor(4);
 
     ImGui::Spacing();
 }
 
 void DashboardView::render_navigation_bar(ConfigManager& config_mgr, const AppFonts& fonts) {
     const char* tabs[] = {
-        "TELEMETRY",
-        "THREADS",
-        "FAN CONTROL",
-        "TUNING & OC",
-        "BENCHMARK",
-        "MONITORING & OSD"
+        "[01] TELEMETRY",
+        "[02] THREADS",
+        "[03] FAN CURVE",
+        "[04] OC & TUNING",
+        "[05] BENCHMARK",
+        "[06] OSD & SENSORS"
     };
 
     float s = fonts.dpi_scale;
-    float tab_width = 138.0f * s;
-    float tab_height = 30.0f * s;
+    float tab_width = 144.0f * s;
+    float tab_height = 32.0f * s;
 
     ImGui::PushFont(fonts.bold);
 
@@ -256,15 +265,15 @@ void DashboardView::render_navigation_bar(ConfigManager& config_mgr, const AppFo
         bool is_active = (active_tab_index_ == i);
 
         if (is_active) {
-            // Liquid Glass Active Tab: Crisp Cyan / Teal Glow with Crisp White Text
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.55f, 0.70f, 0.95f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.70f, 0.85f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+            // High-Tech Active Pill: Vibrant Cyber Cyan Glass with Bold White
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.48f, 0.65f, 0.95f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.62f, 0.82f, 1.00f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 1.00f, 1.00f, 1.00f));
         } else {
-            // Inactive Tab: Recessed Carbon Charcoal
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.09f, 0.12f, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.16f, 0.22f, 0.90f));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.85f, 0.95f, 0.85f));
+            // Inactive Pill: Translucent Dark Slate
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.08f, 0.11f, 0.16f, 0.80f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.12f, 0.18f, 0.26f, 0.90f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.68f, 0.80f, 0.90f));
         }
 
         if (ImGui::Button(tabs[i], ImVec2(tab_width, tab_height))) {
@@ -278,23 +287,23 @@ void DashboardView::render_navigation_bar(ConfigManager& config_mgr, const AppFo
     // 5 Profile Slots Quick Selector on the Right Side
     float avail_w = ImGui::GetContentRegionAvail().x;
     float profile_btn_w = 34.0f * s;
-    float total_profile_w = (profile_btn_w + 4.0f * s) * 5 + 75.0f * s;
+    float total_profile_w = (profile_btn_w + 4.0f * s) * 5 + 85.0f * s;
     if (avail_w > total_profile_w) {
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (avail_w - total_profile_w));
     }
 
-    ImGui::TextColored(ImVec4(0.6f, 0.65f, 0.75f, 1.0f), "PROFILE:");
+    ImGui::TextColored(ImVec4(0.50f, 0.60f, 0.72f, 1.0f), "PROFILES:");
     ImGui::SameLine(0, 6.0f * s);
 
     int cur_profile = config_mgr.get_active_profile_index();
     for (int p = 0; p < ConfigManager::NUM_PROFILES; ++p) {
         bool is_p_active = (cur_profile == p);
         if (is_p_active) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.80f, 0.50f, 0.95f)); // Neon Emerald
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.05f, 0.10f, 0.08f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.85f, 0.45f, 0.95f)); // Neon Emerald
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.04f, 0.10f, 0.06f, 1.0f));
         } else {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.14f, 0.18f, 0.85f));
-            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.70f, 0.75f, 0.85f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.10f, 0.14f, 0.20f, 0.85f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.65f, 0.75f, 0.85f, 1.0f));
         }
         ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.90f, 0.60f, 1.0f));
 
@@ -319,15 +328,15 @@ void DashboardView::render_navigation_bar(ConfigManager& config_mgr, const AppFo
 void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon, const AppFonts& fonts) {
     float s = fonts.dpi_scale;
 
-    // Filter & Add Search Bar (GPU-Z Aqua Labels)
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "PROCESS FILTER:");
-    ImGui::SameLine();
+    // Filter & Add Search Bar (Cyber Cyan Label)
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "PROCESS FILTER:");
+    ImGui::SameLine(0, 8.0f * s);
     ImGui::SetNextItemWidth(180.0f * s);
-    ImGui::InputTextWithHint("##FilterQuery", "Search process...", process_search_query_, sizeof(process_search_query_));
+    ImGui::InputTextWithHint("##FilterQuery", "Filter processes...", process_search_query_, sizeof(process_search_query_));
 
-    ImGui::SameLine();
+    ImGui::SameLine(0, 8.0f * s);
     ImGui::SetNextItemWidth(260.0f * s);
-    if (ImGui::BeginCombo("##ProcessSelectCombo", "Select from active processes...")) {
+    if (ImGui::BeginCombo("##ProcessSelectCombo", "Select running target...")) {
         std::string query = process_search_query_;
         for (const auto& p : cached_proc_list_) {
             std::string name_utf8 = wide_to_utf8(p.name);
@@ -339,7 +348,7 @@ void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon, const AppF
             bool already_monitored = proc_mon.is_monitored(p.pid);
 
             if (already_monitored) {
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.4f, 0.4f, 0.4f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.40f, 0.48f, 1.0f));
             }
 
             if (ImGui::Selectable(label.c_str(), false, already_monitored ? ImGuiSelectableFlags_Disabled : 0)) {
@@ -353,13 +362,13 @@ void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon, const AppF
         ImGui::EndCombo();
     }
 
-    ImGui::SameLine();
-    if (ImGui::Button("[Refresh]")) {
+    ImGui::SameLine(0, 8.0f * s);
+    if (ImGui::Button("[ Refresh List ]")) {
         cached_proc_list_ = ProcessMonitor::enumerate_processes();
     }
 
-    ImGui::SameLine();
-    if (ImGui::Button("[Clear All]")) {
+    ImGui::SameLine(0, 6.0f * s);
+    if (ImGui::Button("[ Clear Targets ]")) {
         proc_mon.clear_targets();
         cpu_histories_.clear();
         ram_histories_mb_.clear();
@@ -369,13 +378,13 @@ void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon, const AppF
     const auto& targets = proc_mon.get_monitored_targets();
     if (targets.empty()) {
         ImGui::Spacing();
-        ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "No processes selected. Select processes above to start profiling.");
+        ImGui::TextColored(ImVec4(1.00f, 0.70f, 0.15f, 1.0f), "No targets hooked. Select game or application above to enable hardware attribution profiling.");
         return;
     }
 
     ImGui::Spacing();
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "TARGETS:");
-    ImGui::SameLine();
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "TARGETS:");
+    ImGui::SameLine(0, 8.0f * s);
 
     DWORD to_remove_pid = 0;
     DWORD to_primary_pid = 0;
@@ -384,8 +393,8 @@ void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon, const AppF
         ImGui::PushID(static_cast<int>(t.pid));
 
         ImVec4 col(t.color.r, t.color.g, t.color.b, 1.0f);
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.09f, 0.11f, 0.16f, 0.90f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.18f, 0.14f, 0.18f, 1.0f));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.09f, 0.13f, 0.19f, 0.90f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.14f, 0.20f, 0.28f, 1.0f));
         ImGui::PushStyleColor(ImGuiCol_Text, col);
 
         std::string badge = (t.is_primary ? "[PRIMARY] " : "[#] ") + wide_to_utf8(t.name) + " (" + std::to_string(t.pid) + ")";
@@ -398,9 +407,13 @@ void DashboardView::render_process_tags_bar(ProcessMonitor& proc_mon, const AppF
         ImGui::PopStyleColor(3);
 
         ImGui::SameLine(0, 2);
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.08f, 0.10f, 0.70f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.60f, 0.12f, 0.18f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.40f, 0.40f, 1.0f));
         if (ImGui::SmallButton("X")) {
             to_remove_pid = t.pid;
         }
+        ImGui::PopStyleColor(3);
         ImGui::SameLine(0, 8.0f * s);
 
         ImGui::PopID();
@@ -429,57 +442,61 @@ void DashboardView::render_summary_cards(
     float s = fonts.dpi_scale;
     float avail_width = ImGui::GetContentRegionAvail().x;
     float card_width = (avail_width - 24.0f * s) / 4.0f;
-    float card_height = 114.0f * s; // Guaranteed height to prevent any scrollbars
+    float card_height = 120.0f * s; // Guaranteed height to prevent any scrollbars
 
     const auto* primary = proc_mon.get_primary_target();
     double total_sec_cpu = proc_mon.get_total_secondary_cpu();
     size_t total_sec_ram = proc_mon.get_total_secondary_ram();
 
-    // Style adjustments for compact, scrollbar-free GPU-Z ROG cards
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10.0f * s, 8.0f * s));
+    // Style adjustments for compact, scrollbar-free Bento cards (ui-ux-pro-max-skill)
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(12.0f * s, 10.0f * s));
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f * s, 3.0f * s));
     ImGuiWindowFlags card_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 
-    // Card 1: Frame Rates & Latency
+    // Card 1: Frame Rates & Latency (Neon Emerald KPI)
     ImGui::BeginChild("CardFPS", ImVec2(card_width, card_height), true, card_flags);
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "FRAME DELIVERY & LATENCY");
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "FRAME DELIVERY & PACING");
     
     ImGui::PushFont(fonts.large_stat);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.90f, 0.45f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.90f, 0.46f, 1.0f)); // Neon Emerald
     ImGui::Text("%.1f", frame_stats.current_fps);
     ImGui::PopStyleColor();
     ImGui::PopFont();
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.90f, 1.0f), "FPS");
+    ImGui::SameLine(0, 6.0f * s);
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextColored(ImVec4(0.85f, 0.90f, 0.95f, 1.0f), "FPS");
+    ImGui::PopFont();
 
     // Live bottleneck indicator badge
     BottleneckInfo bInfo = detect_bottleneck(gpu, cpu, frame_stats.current_fps, proc_mon.get_system_ram_used(), proc_mon.get_system_ram_total());
     if (bInfo.type != BottleneckType::None) {
-        ImGui::SameLine();
-        ImGui::TextColored(ImVec4(1.0f, 0.23f, 0.19f, 1.0f), "[%s]", bInfo.short_badge.c_str());
+        ImGui::SameLine(0, 8.0f * s);
+        ImGui::TextColored(ImVec4(1.00f, 0.35f, 0.25f, 1.0f), "[%s]", bInfo.short_badge.c_str());
     }
 
-    ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.95f, 1.0f), "1%% Low: %.1f FPS | FT: %.2f ms", frame_stats.one_percent_low, frame_stats.frametime_ms);
+    ImGui::TextColored(ImVec4(0.88f, 0.92f, 0.96f, 1.0f), "1%% Low: %.1f FPS  |  FT: %.2f ms", frame_stats.one_percent_low, frame_stats.frametime_ms);
     if (etw_tracker.is_active()) {
-        ImGui::TextColored(ImVec4(0.00f, 0.85f, 0.45f, 0.9f), "Engine: Kernel PresentMon (ETW)");
+        ImGui::TextColored(ImVec4(0.00f, 0.90f, 0.46f, 0.95f), "Engine: Kernel PresentMon (ETW)");
     } else {
         ImGui::TextDisabled("Engine: D3D11 SwapChain Present");
     }
     ImGui::EndChild();
 
-    ImGui::SameLine();
+    ImGui::SameLine(0, 8.0f * s);
 
-    // Card 2: GPU Telemetry Card (Universal AMD / NVIDIA / Intel)
+    // Card 2: GPU Telemetry Card (Cyber Cyan KPI)
     ImGui::BeginChild("CardGPU", ImVec2(card_width, card_height), true, card_flags);
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "GPU ENGINE TELEMETRY");
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "GPU ACCELERATOR & VRAM");
 
     ImGui::PushFont(fonts.large_stat);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.88f, 0.95f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.00f, 0.90f, 1.00f, 1.0f)); // Cyber Cyan
     ImGui::Text("%d%%", gpu.core_usage_percent);
     ImGui::PopStyleColor();
     ImGui::PopFont();
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.90f, 1.0f), "LOAD");
+    ImGui::SameLine(0, 6.0f * s);
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextColored(ImVec4(0.85f, 0.90f, 0.95f, 1.0f), "LOAD");
+    ImGui::PopFont();
 
     // VRAM calculation
     float vram_used_mb = static_cast<float>(gpu.vram_used_bytes) / (1024.0f * 1024.0f);
@@ -487,21 +504,21 @@ void DashboardView::render_summary_cards(
     if (vram_total_mb > 0.0f) {
         if (vram_used_mb > 0.0f) {
             float vram_pct = (vram_used_mb / vram_total_mb) * 100.0f;
-            ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.95f, 1.0f), "VRAM: %.0f / %.0f MB (%.0f%%)", vram_used_mb, vram_total_mb, vram_pct);
+            ImGui::TextColored(ImVec4(0.88f, 0.92f, 0.96f, 1.0f), "VRAM: %.0f / %.0f MB (%.0f%%)", vram_used_mb, vram_total_mb, vram_pct);
         } else {
-            ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.95f, 1.0f), "VRAM: %.0f MB Dedicated", vram_total_mb);
+            ImGui::TextColored(ImVec4(0.88f, 0.92f, 0.96f, 1.0f), "VRAM: %.0f MB Dedicated", vram_total_mb);
         }
     } else {
-        ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.95f, 1.0f), "VRAM: %.0f MB Used", vram_used_mb);
+        ImGui::TextColored(ImVec4(0.88f, 0.92f, 0.96f, 1.0f), "VRAM: %.0f MB Used", vram_used_mb);
     }
 
     if (gpu.temperature_c > 0) {
         if (gpu.hotspot_temp_c > 0 && gpu.vram_temp_c > 0) {
-            ImGui::TextColored(ImVec4(1.00f, 0.50f, 0.30f, 1.0f), "T: %dC | Hot: %dC | Mem: %dC", gpu.temperature_c, gpu.hotspot_temp_c, gpu.vram_temp_c);
+            ImGui::TextColored(ImVec4(1.00f, 0.65f, 0.25f, 1.0f), "T: %d C | Hot: %d C | Mem: %d C", gpu.temperature_c, gpu.hotspot_temp_c, gpu.vram_temp_c);
         } else if (gpu.hotspot_temp_c > 0) {
-            ImGui::TextColored(ImVec4(1.00f, 0.50f, 0.30f, 1.0f), "T: %dC | Hotspot: %dC", gpu.temperature_c, gpu.hotspot_temp_c);
+            ImGui::TextColored(ImVec4(1.00f, 0.65f, 0.25f, 1.0f), "T: %d C | Hotspot: %d C", gpu.temperature_c, gpu.hotspot_temp_c);
         } else {
-            ImGui::TextColored(ImVec4(1.00f, 0.50f, 0.30f, 1.0f), "Temp: %d C | Clocks: %d MHz", gpu.temperature_c, gpu.core_clock_mhz);
+            ImGui::TextColored(ImVec4(1.00f, 0.65f, 0.25f, 1.0f), "Temp: %d C | Clocks: %d MHz", gpu.temperature_c, gpu.core_clock_mhz);
         }
     } else {
         std::string name_short = wide_to_utf8(gpu.adapter_name);
@@ -510,34 +527,37 @@ void DashboardView::render_summary_cards(
     }
     ImGui::EndChild();
 
-    ImGui::SameLine();
+    ImGui::SameLine(0, 8.0f * s);
 
-    // Card 3: CPU Hardware & Application
+    // Card 3: CPU Hardware & Application (Electric Sky Blue KPI)
     ImGui::BeginChild("CardPrimary", ImVec2(card_width, card_height), true, card_flags);
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "CPU HARDWARE & PROCESS");
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "CPU PROCESSOR & APP");
+    
     ImGui::PushFont(fonts.large_stat);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.35f, 0.75f, 1.0f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.22f, 0.74f, 0.97f, 1.0f)); // Electric Sky Blue
     ImGui::Text("%.0f%%", cpu.total_usage_percent);
     ImGui::PopStyleColor();
     ImGui::PopFont();
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.90f, 1.0f), "LOAD (C%d: %.0f%%)", cpu.max_core_index, cpu.max_core_usage);
+    ImGui::SameLine(0, 6.0f * s);
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextColored(ImVec4(0.85f, 0.90f, 0.95f, 1.0f), "LOAD (C%d: %.0f%%)", cpu.max_core_index, cpu.max_core_usage);
+    ImGui::PopFont();
 
     if (cpu.package_temp_c > 0) {
         if (cpu.package_power_w > 0) {
-            ImGui::TextColored(ImVec4(1.00f, 0.65f, 0.20f, 1.0f), "Package: %d C | Power: %d W", cpu.package_temp_c, cpu.package_power_w);
+            ImGui::TextColored(ImVec4(1.00f, 0.70f, 0.20f, 1.0f), "Package: %d C | Power: %d W", cpu.package_temp_c, cpu.package_power_w);
         } else {
-            ImGui::TextColored(ImVec4(1.00f, 0.65f, 0.20f, 1.0f), "Package: %d C | Cores: %u", cpu.package_temp_c, cpu.logical_core_count);
+            ImGui::TextColored(ImVec4(1.00f, 0.70f, 0.20f, 1.0f), "Package: %d C | Cores: %u", cpu.package_temp_c, cpu.logical_core_count);
         }
     } else {
-        ImGui::TextColored(ImVec4(0.70f, 0.75f, 0.85f, 1.0f), "Package Temp: N/A | Cores: %u", cpu.logical_core_count);
+        ImGui::TextColored(ImVec4(0.60f, 0.68f, 0.78f, 1.0f), "Package Temp: N/A | Cores: %u", cpu.logical_core_count);
     }
 
     if (primary && primary->is_alive) {
         float ram_mb = static_cast<float>(primary->private_working_set) / (1024.0f * 1024.0f);
         std::string proc_name = wide_to_utf8(primary->name);
         if (proc_name.length() > 14) proc_name = proc_name.substr(0, 12) + "..";
-        ImGui::TextColored(ImVec4(0.65f, 0.85f, 1.0f, 1.0f), "%s: %.1f%% (%d MB)", proc_name.c_str(), primary->cpu_percent, static_cast<int>(ram_mb));
+        ImGui::TextColored(ImVec4(0.40f, 0.85f, 1.00f, 1.0f), "%s: %.1f%% (%d MB)", proc_name.c_str(), primary->cpu_percent, static_cast<int>(ram_mb));
     } else {
         std::string cpu_name = wide_to_utf8(cpu.cpu_model_name);
         if (cpu_name.length() > 22) cpu_name = cpu_name.substr(0, 20) + "..";
@@ -545,27 +565,29 @@ void DashboardView::render_summary_cards(
     }
     ImGui::EndChild();
 
-    ImGui::SameLine();
+    ImGui::SameLine(0, 8.0f * s);
 
-    // Card 4: Secondary Background Overhead Total
+    // Card 4: Secondary Background Overhead Total (Crimson Alert KPI)
     ImGui::BeginChild("CardSecondary", ImVec2(card_width, card_height), true, card_flags);
-    ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "BACKGROUND OVERHEAD TAX");
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "BACKGROUND OVERHEAD TAX");
     
     ImGui::PushFont(fonts.large_stat);
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.22f, 0.32f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.32f, 0.45f, 1.0f)); // Crimson Alert
     ImGui::Text("+%.2f%%", total_sec_cpu);
     ImGui::PopStyleColor();
     ImGui::PopFont();
-    ImGui::SameLine();
-    ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.90f, 1.0f), "TOTAL TAX");
+    ImGui::SameLine(0, 6.0f * s);
+    ImGui::PushFont(fonts.bold);
+    ImGui::TextColored(ImVec4(0.85f, 0.90f, 0.95f, 1.0f), "TOTAL TAX");
+    ImGui::PopFont();
 
     float sec_ram_mb = static_cast<float>(total_sec_ram) / (1024.0f * 1024.0f);
     size_t sec_count = 0;
     for (const auto& t : proc_mon.get_monitored_targets()) {
         if (!t.is_primary) sec_count++;
     }
-    ImGui::TextColored(ImVec4(0.92f, 0.92f, 0.95f, 1.0f), "Background RAM: %.1f MB", sec_ram_mb);
-    ImGui::TextColored(ImVec4(0.75f, 0.80f, 0.88f, 1.0f), "Monitored Secondary: %zu Apps", sec_count);
+    ImGui::TextColored(ImVec4(0.88f, 0.92f, 0.96f, 1.0f), "Background RAM: %.1f MB", sec_ram_mb);
+    ImGui::TextColored(ImVec4(0.65f, 0.72f, 0.82f, 1.0f), "Monitored Background: %zu Apps", sec_count);
     ImGui::EndChild();
 
     ImGui::PopStyleVar(2);
@@ -1313,13 +1335,16 @@ void DashboardView::render_benchmark_tab(
 
     if (!last_generated_report_path_.empty()) {
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.15f, 0.65f, 0.35f, 0.9f));
+        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.48f, 0.32f, 0.90f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.00f, 0.75f, 0.45f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.00f, 0.90f, 0.55f, 1.00f));
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 1.00f, 1.00f, 1.0f));
         ImGui::PushFont(fonts.bold);
-        if (ImGui::Button("[OPEN INTERACTIVE BROWSER REPORT & SHARE CARD]", ImVec2(440.0f * fonts.dpi_scale, 36.0f * fonts.dpi_scale))) {
+        if (ImGui::Button("[ OPEN INTERACTIVE BROWSER REPORT & SHARE CARD ]", ImVec2(440.0f * fonts.dpi_scale, 36.0f * fonts.dpi_scale))) {
             ReportGenerator::open_in_browser(last_generated_report_path_);
         }
         ImGui::PopFont();
-        ImGui::PopStyleColor();
+        ImGui::PopStyleColor(4);
     }
 
     ImGui::Spacing();
@@ -1375,14 +1400,15 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
         rtss_bridge.connect();
     }
     ImGui::SameLine();
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.6f, 0.1f, 0.15f, 0.8f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.85f, 0.15f, 0.2f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.32f, 0.10f, 0.14f, 0.85f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.55f, 0.14f, 0.20f, 1.0f));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.50f, 0.50f, 1.0f));
     if (ImGui::Button("Shutdown RTSS")) {
         rtss_bridge.clear_osd();
         rtss_bridge.disconnect();
         RTSSBridge::kill_rtss();
     }
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor(3);
 
     ImGui::Checkbox("Close RTSS process automatically when AnyPerfomans exits", &hud.close_rtss_on_exit);
     ImGui::TextDisabled("Ensures no orphaned RTSS.exe background tasks remain when you close AnyPerfomans.");
@@ -1476,7 +1502,8 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
         if (p > 0) ImGui::SameLine();
         bool is_active = (current_fps_limit == fps_presets[p].limit);
         if (is_active) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.0f, 0.7f, 0.8f, 0.9f));
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.00f, 0.50f, 0.68f, 0.95f));
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
         }
         if (ImGui::Button(fps_presets[p].label)) {
             current_fps_limit = fps_presets[p].limit;
@@ -1484,7 +1511,7 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
             RTSSBridge::set_framerate_limit(current_fps_limit);
         }
         if (is_active) {
-            ImGui::PopStyleColor();
+            ImGui::PopStyleColor(2);
         }
     }
 
@@ -1502,9 +1529,9 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
 
     // Reorderable Sensors Table
     ImGui::TextColored(ImVec4(0.00f, 0.88f, 0.95f, 1.0f), "REORDERABLE SENSORS & OSD PIPELINE (MSI AFTERBURNER MAX)");
-    ImGui::TextDisabled("Reorder telemetry rows with [^] [v], customize labels, pick colors and toggle hardware line graphs.");
+    ImGui::TextDisabled("Reorder telemetry rows with buttons, customize labels, pick colors and toggle hardware line graphs.");
 
-    if (ImGui::Button("Reset Sensors to Default Layout")) {
+    if (ImGui::Button("[ Reset Sensors to Default Layout ]")) {
         ConfigManager::init_default_sensors(hud.sensors);
     }
 
@@ -1531,7 +1558,7 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
             ImGui::TableSetColumnIndex(0);
             ImGui::PushID(i * 100 + 1);
             if (i > 0) {
-                if (ImGui::SmallButton("^")) {
+                if (ImGui::SmallButton("<")) {
                     std::swap(hud.sensors[i], hud.sensors[i - 1]);
                 }
             } else {
@@ -1539,7 +1566,7 @@ void DashboardView::render_settings_tab(ConfigManager& config_mgr, RTSSBridge& r
             }
             ImGui::SameLine();
             if (i + 1 < static_cast<int>(hud.sensors.size())) {
-                if (ImGui::SmallButton("v")) {
+                if (ImGui::SmallButton(">")) {
                     std::swap(hud.sensors[i], hud.sensors[i + 1]);
                 }
             }
@@ -1833,17 +1860,17 @@ void DashboardView::render_rtss_mini_hud(
         ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoCollapse;
 
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.05f, 0.05f, 0.07f, hud.bg_opacity));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.04f, 0.05f, 0.08f, hud.bg_opacity));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.85f, 0.18f, 0.25f, 0.6f));
+    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.00f, 0.85f, 1.00f, 0.50f));
 
     ImGui::Begin("AnyPerfRTSSHud", nullptr, flags);
 
-    // Title / Switch button
+    // Title / Switch button (HUD Style)
     ImGui::PushFont(fonts.bold);
-    ImGui::TextColored(ImVec4(0.85f, 0.15f, 0.22f, 1.0f), "ANYPERFOMANS");
+    ImGui::TextColored(ImVec4(0.00f, 0.90f, 1.00f, 1.0f), "ANYPERFOMANS");
     ImGui::PopFont();
-    ImGui::SameLine(ImGui::GetWindowWidth() - 75.0f * hud.font_scale * fonts.dpi_scale);
+    ImGui::SameLine(ImGui::GetWindowWidth() - 85.0f * hud.font_scale * fonts.dpi_scale);
     if (ImGui::SmallButton("Full [F11]")) {
         current_mode = OverlayMode::Dashboard;
     }
