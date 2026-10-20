@@ -49,10 +49,22 @@ Comprehensive per-core utilization across all logical processor threads (no arbi
 ---
 
 ### 4. GPU Tuning, True Hardware Overclocking & Undervolting
-* **AMD Overdrive 8 (OD8) Direct Engine** (Navi 10 / RDNA 1 & RDNA 2, including RX 5600 XT, RX 5700 XT, RX 6000 series):
-  - **Real 3-Point V/F Curve Undervolting**: Directly programs the top operating state voltage (e.g. 1008 mV down to 950 mV) via `ADL2_Overdrive8_Setting_Set`, dramatically lowering temperatures and power draw while sustaining maximum boost clocks.
-  - **Safe VBIOS Limits & Clamping**: Automatically detects factory VBIOS limits and clamps frequency and voltage adjustments to vendor-safe ranges (`1750 .. 1860 MHz` for RX 5600 XT memory).
-  - **Power Limit Range**: Fine control from -50% up to +20% board power headroom.
+* **Real-Time GPU Core Voltage Telemetry**:
+  - Direct hardware polling via official AMD ADL Performance Logging (`ADL_PMLOG_GFX_VOLTAGE = 21`).
+  - Reports exact millivolts (**mV**) live in the dashboard, RTSS OSD, DX11 HUD, and curve crosshairs.
+* **Interactive MSI Afterburner-Style V/F Curve Editor (`Ctrl + F`)**:
+  - Direct 3-State Piecewise V/F Spline for AMD RDNA 1 & 2 (Navi 10 / RX 5600 XT / 5700 XT / 6000 Series).
+  - Drag & drop points (**P1**, **P2**, **P3**) directly on the graph with mouse or adjust via precision numerical inputs.
+  - Automatic peak voltage flattening (**Flatline past P3**) to guarantee the GPU never pulls excess voltage.
+  - Real-time animated **Live Operating Point Crosshair** tracing exact live mV and live MHz while 3D applications or games are running.
+  - One-click tuning presets:
+    - `Sweet Spot: 1750 MHz @ 940 mV` (Optimal balance for Navi 10 / RX 5600 XT).
+    - `Cool & Quiet: 1700 MHz @ 900 mV` (Maximum acoustic silence and efficiency).
+    - `Reset to VBIOS Curve`.
+* **AMD Overdrive 8 (OD8) Direct Engine**:
+  - Directly commits frequency and voltage states to hardware via `ADL2_Overdrive8_Setting_Set` on the fly.
+  - Detects factory VBIOS limits and clamps frequency and voltage adjustments to vendor-safe ranges (`1750 .. 1860 MHz` memory).
+  - Power Limit headroom control (-50% up to +20%).
 * **NVIDIA NVAPI P-States 2.0**: Direct physical clock offsets (`freqDelta_kHz`) for Graphics Core and Memory domains via `NvAPI_GPU_SetPstates20` and native power limit control.
 * **TDR Crash Watchdog & Safe Mode (`anyperf_oc_canary.tmp`)**:
   - An intelligent canary marker tracks startup overclocking stability.
@@ -100,6 +112,7 @@ Comprehensive per-core utilization across all logical processor threads (no arbi
 
 | Hotkey / Shortcut | Action | Description |
 | :--- | :--- | :--- |
+| **`Ctrl + F`** | **Toggle V/F Curve Editor** | Opens dedicated MSI Afterburner-style interactive voltage-frequency graph |
 | **`F11`** | **Toggle AnyPerfomans Dashboard** | Shows or hides the desktop application window without disrupting games |
 | **`F12`** | **Toggle RTSS In-Game OSD** | Instantly hides or shows the overlay inside 3D games (like MSI Afterburner) |
 | **`F10`** | **Toggle Benchmark Run** | Starts or stops comparative impact recording session |

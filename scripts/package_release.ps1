@@ -58,6 +58,7 @@ HOW TO RUN:
 --------------------------------------------------------------------------------
 HOTKEYS & SHORTCUTS:
 --------------------------------------------------------------------------------
+* Ctrl+F          : Toggle Voltage/Frequency Curve Editor (MSI Afterburner style)
 * F11             : Toggle AnyPerfomans Dashboard window
 * F12             : Toggle In-Game RTSS OSD Overlay (Show / Hide overlay in games)
 * F10             : Start / Stop Benchmark Session Recording

@@ -182,6 +182,19 @@ static void parse_hud_json(const json& j, HudConfig& hud) {
     }
     if (hud.sensors.empty()) {
         ConfigManager::init_default_sensors(hud.sensors);
+    } else {
+        // Auto-migration: ensure newly introduced system sensors (e.g. gpu_voltage) are appended
+        std::vector<SensorConfigItem> def_sensors;
+        ConfigManager::init_default_sensors(def_sensors);
+        for (const auto& def_s : def_sensors) {
+            bool found = false;
+            for (const auto& cur_s : hud.sensors) {
+                if (cur_s.id == def_s.id) { found = true; break; }
+            }
+            if (!found) {
+                hud.sensors.push_back(def_s);
+            }
+        }
     }
 }
 
