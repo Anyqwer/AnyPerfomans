@@ -45,3 +45,4 @@ CMakeSettings.json
 dist/
 *.tmp
 
+imgui.ini
