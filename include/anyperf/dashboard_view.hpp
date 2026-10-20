@@ -71,35 +71,21 @@ private:
         const FrameStats& frame_stats,
         const AppFonts& fonts
     );
-    void render_telemetry_plots(
+    void render_tuning_tab(
+        HardwareController& hw_ctrl,
+        ConfigManager& config_mgr,
         const ProcessMonitor& proc_mon,
         const GpuMetrics& gpu,
+        const FrameStats& frame_stats,
         const AppFonts& fonts
     );
-    void render_thread_inspector(
+    void render_telemetry_tab(
         ThreadProfiler& thread_prof,
         const ProcessMonitor& proc_mon,
-        const AppFonts& fonts
-    );
-    void render_fan_control_tab(
-        HardwareController& hw_ctrl,
-        ConfigManager& config_mgr,
         const GpuMetrics& gpu,
         const AppFonts& fonts
     );
-    void render_overclock_tab(
-        HardwareController& hw_ctrl,
-        ConfigManager& config_mgr,
-        const GpuMetrics& gpu,
-        const AppFonts& fonts
-    );
-    void render_benchmark_tab(
-        const ProcessMonitor& proc_mon,
-        const GpuMetrics& gpu,
-        const FrameStats& frames,
-        const AppFonts& fonts
-    );
-    void render_settings_tab(
+    void render_osd_sensors_tab(
         ConfigManager& config_mgr,
         RTSSBridge& rtss_bridge,
         const AppFonts& fonts
@@ -127,7 +113,9 @@ private:
     char process_search_query_[128] = "";
     DWORD selected_inspector_pid_ = 0;
 
-    int active_tab_index_ = 0; // 0 = Charts, 1 = Threads, 2 = Benchmark, 3 = Settings
+    int active_tab_index_ = 0; // 0 = Tuning & OC, 1 = Telemetry & Threads, 2 = OSD & Sensors
+    bool show_vf_curve_ = true;
+    bool show_fan_curve_ = false;
 
     // A/B Benchmark state
     bool is_benchmarking_ = false;
